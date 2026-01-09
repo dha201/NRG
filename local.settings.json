@@ -1,0 +1,12 @@
+{
+    "IsEncrypted": false,
+    "Values": {
+        "AzureWebJobsStorage": "",
+        "FUNCTIONS_WORKER_RUNTIME": "python",
+        "CONGRESS_API_KEY": "",
+        "REGULATIONS_API_KEY": "",
+        "OPENSTATES_API_KEY": "",
+        "OPENAI_API_KEY": "",
+        "GOOGLE_API_KEY": ""
+    }
+}

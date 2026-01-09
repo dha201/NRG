@@ -28,7 +28,27 @@ brew install pandoc
 pandoc --version
 ```
 
-### Step 3: Set Up Python Virtual Environment
+### Step 3: Set Up Python Environment
+
+#### Option A: Modern Setup with uv (Recommended)
+```bash
+# Install uv (fast Rust-based package manager)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Or via Homebrew
+brew install uv
+
+# Verify installation
+uv --version
+```
+
+**Benefits:**
+- 10-100x faster than pip
+- Automatic environment management
+- No manual venv activation needed
+- Dependencies auto-installed on first run
+
+#### Option B: Traditional Setup with venv
 ```bash
 # Create virtual environment
 python3 -m venv venv
@@ -41,19 +61,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### Step 4: Set Up Database
-```bash
-# Initialize SQLite database (creates bill_cache.db)
-source venv/bin/activate
-python -c "
-import sqlite3
-conn = sqlite3.connect('bill_cache.db')
-# Database initialization handled automatically by poc.py
-print('Database ready')
-"
-```
-
-### Step 5: Configure API Keys
+### Step 4: Configure API Keys
 ```bash
 # Copy environment template
 cp .env.example .env
@@ -70,14 +78,17 @@ nano .env  # or use your preferred editor
 - **REGULATIONS_API_KEY** (Federal regulations): https://api.regulations.gov/
 - **LEGISCAN_API_KEY** (Backup): https://legiscan.com/legiscan-api
 
-### Step 6: Verify Configuration
+### Step 5: Verify Configuration
 ```bash
 # Check configuration files
 ls -la config.yaml nrg_business_context.txt
 
-# Test virtual environment
+# Test dependencies (uv)
+uv run python -c "import httpx, openai, google.genai, yaml, sqlite3; print('All dependencies OK')"
+
+# Or with traditional venv
 source venv/bin/activate
-python -c "import httpx, openai, google.generativeai, yaml, sqlite3; print('All dependencies OK')"
+python -c "import httpx, openai, google.genai, yaml, sqlite3; print('All dependencies OK')"
 ```
 
 ---
@@ -85,6 +96,14 @@ python -c "import httpx, openai, google.generativeai, yaml, sqlite3; print('All 
 ## Running the System
 
 ### Quick Start
+
+#### With uv (Recommended)
+```bash
+# Run directly - handles environment automatically
+uv run "poc 2.py"
+```
+
+#### With traditional venv
 ```bash
 # Activate virtual environment
 source venv/bin/activate
@@ -92,6 +111,8 @@ source venv/bin/activate
 # Run legislative analysis
 python "poc 2.py"
 ```
+
+**Note:** Database initialization (`bill_cache.db`) happens automatically on first run.
 
 ### Configuration Options
 Edit `config.yaml` to customize:

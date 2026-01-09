@@ -582,16 +582,16 @@ flowchart LR
 
 ### Security Best Practices Checklist
 
-- ✅ **No hardcoded credentials** - All secrets in Key Vault
-- ✅ **Managed Identity** - For Azure-to-Azure auth
-- ✅ **HTTPS only** - All API communications encrypted
-- ✅ **Least privilege** - Function has minimum required permissions
-- ✅ **Secret rotation** - 90-day rotation policy
-- ✅ **Network isolation** - VNet integration for production (optional)
-- ✅ **Private endpoints** - Key Vault and Storage accessible privately
-- ✅ **Audit logging** - All secret access logged in Azure Monitor
-- ✅ **IP restrictions** - Limit Key Vault access to Function subnet
-- ✅ **MFA enforcement** - For manual Azure Portal access
+-  **No hardcoded credentials** - All secrets in Key Vault
+-  **Managed Identity** - For Azure-to-Azure auth
+-  **HTTPS only** - All API communications encrypted
+-  **Least privilege** - Function has minimum required permissions
+-  **Secret rotation** - 90-day rotation policy
+-  **Network isolation** - VNet integration for production (optional)
+-  **Private endpoints** - Key Vault and Storage accessible privately
+-  **Audit logging** - All secret access logged in Azure Monitor
+-  **IP restrictions** - Limit Key Vault access to Function subnet
+-  **MFA enforcement** - For manual Azure Portal access
 
 ---
 
@@ -1011,13 +1011,13 @@ flowchart TD
 
 ### Architecture Highlights
 
-✅ **Serverless** - No infrastructure management  
-✅ **Scalable** - Ready for multi-customer deployment  
-✅ **Secure** - Key Vault, Managed Identity, network isolation  
-✅ **Observable** - Full telemetry via App Insights  
-✅ **Pluggable Storage** - Swap data lakes via env vars  
-✅ **CI/CD Ready** - Automated deployment pipeline  
-✅ **Cost-Optimized** - ~$70-220/month production  
+ **Serverless** - No infrastructure management  
+ **Scalable** - Ready for multi-customer deployment  
+ **Secure** - Key Vault, Managed Identity, network isolation  
+ **Observable** - Full telemetry via App Insights  
+ **Pluggable Storage** - Swap data lakes via env vars  
+ **CI/CD Ready** - Automated deployment pipeline  
+ **Cost-Optimized** - ~$70-220/month production  
 
 ### Quick Start Checklist
 
