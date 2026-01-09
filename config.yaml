@@ -1,0 +1,160 @@
+# NRG Energy Legislative Intelligence POC Configuration
+# This file controls LLM providers, data sources, and change tracking behavior
+
+# =============================================================================
+# Debug Logging Configuration
+# =============================================================================
+debug:
+  enabled: true
+  
+  # Debug options
+  api_order: true          # Show API version order from Open States/Congress
+  analysis_order: true     # Show version_analyses order before selection
+  llm_calls: false         # Show LLM request/response details
+  change_detection: false  # Show hash comparisons and change detection logic
+
+# =============================================================================
+# LLM Provider Configuration
+# =============================================================================
+llm:
+  # Active provider: "gemini" or "openai"
+  #provider: "gemini"
+  provider: "openai"
+
+  # OpenAI Configuration (GPT-5)
+  openai:
+    api_key_env: "OPENAI_API_KEY"
+    model: "gpt-5"
+    reasoning_effort: "medium"  # low, medium, high
+    verbosity: "high"           # low, medium, high
+
+  # Google Gemini Configuration
+  gemini:
+    api_key_env: "GOOGLE_API_KEY"
+    model: "gemini-3-pro-preview"
+    temperature: 0.2            # 0.0 (deterministic) to 1.0 (creative)
+    max_output_tokens: 8192
+    # Note: Gemini doesn't have reasoning_effort/verbosity parameters
+    # Control verbosity through system instructions in prompt
+
+# =============================================================================
+# Data Sources Configuration
+# =============================================================================
+sources:
+  # Congress.gov - Federal legislation
+  congress:
+    enabled: true
+    limit: 3  # Number of bills to fetch per run
+
+  # Regulations.gov - Federal regulations
+  regulations:
+    enabled: true
+    limit: 3  # Number of regulations to fetch per run
+
+  # LegiScan - DEPRECATED (replaced by Open States)
+  # Kept as backup fallback in case Open States is unavailable
+  legiscan_federal:
+    enabled: false  # Disabled - using Open States instead
+    limit: 3
+    state: "US"
+
+  # Open States API - State and federal legislation (ACTIVE)
+  openstates:
+    enabled: true
+    api_key_env: "OPENSTATES_API_KEY"
+
+    # Federal bills (replaces legiscan_federal)
+    federal:
+      enabled: false  # Disabled for now - using Congress.gov for federal
+      jurisdiction: "US"
+      limit: 3
+      search_query: "oil and gas"
+
+    # Texas State Bills (replaces texas_bills via LegiScan)
+    texas_bills:
+      enabled: true
+      jurisdiction: "TX"
+      # Specific bill numbers to monitor (89th Legislature - 2025)
+      # REDUCED TO 2 BILLS WITH MULTIPLE VERSIONS - Full list backed up in config.yaml.backup.17bills
+      # HB4238 has 5 versions: Introduced, House Committee Report, Engrossed, Senate Committee Report, Enrolled
+      # HB391 has 3 versions: Introduced, House Committee Report, Engrossed
+      bills:
+        - "HB4238"
+        - "HB391"
+      # Optional: additional search query
+      # search_query: "oil and gas"
+      # search_limit: 5
+
+# =============================================================================
+# Change Tracking Configuration
+# =============================================================================
+change_tracking:
+  enabled: true
+
+  # SQLite database for caching bill data
+  database: "bill_cache.db"
+
+  # What types of changes to track
+  track_text_changes: true      # Detect bill text modifications
+  track_amendments: true         # Track new amendments
+  track_status_changes: true     # Track bill status updates (Introduced → Passed)
+
+  # Use LLM to analyze impact of detected changes
+  analyze_changes_with_llm: true
+
+  # Minimum time between checks (to avoid excessive API calls)
+  # Format: hours (e.g., 24 = once per day)
+  min_check_interval_hours: 0  # 0 = check every run
+
+# =============================================================================
+# Bill Version Tracking Configuration
+# =============================================================================
+version_tracking:
+  enabled: true
+
+  # Fetch all versions of each bill (Introduced, Committee Reports, Enrolled, etc.)
+  fetch_all_versions: true
+
+  # Analyze each version independently with LLM
+  # Set to false to only analyze final version
+  analyze_all_versions: true
+
+  # Generate version comparison diffs between consecutive versions
+  compare_versions: true
+
+  # Include version timeline in reports
+  include_version_timeline_in_reports: true
+
+  # Sources to fetch versions from
+  # Note: Open States has full version support
+  # Congress.gov support is now implemented and tested
+  # Regulations.gov lacks native version support (no version history in API)
+  sources:
+    openstates: true      # Texas and other state bills
+    congress: true        # Federal bills - NOW ACTIVE
+    regulations: false    # Federal regulations (no version history in API)
+
+# =============================================================================
+# Output Configuration
+# =============================================================================
+output:
+  # Include change history in reports
+  include_change_summary: true
+
+  # Include amendment details in reports
+  include_amendments: true
+
+  # Highlight changes in console output
+  highlight_changes: true
+
+  # Generate Word documents (requires pandoc)
+  generate_docx: true
+
+# =============================================================================
+# API Rate Limiting (optional - for future use)
+# =============================================================================
+rate_limiting:
+  # Delay between API calls (seconds)
+  congress_delay: 0.5
+  regulations_delay: 0.5
+  legiscan_delay: 0.5
