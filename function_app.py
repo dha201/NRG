@@ -13,7 +13,7 @@ def run_analysis():
     
     try:
         # pylint: disable=import-outside-toplevel
-        from nrg_core import legislative_tracker
+        import legislative_tracker
         legislative_tracker.main()
         
         logging.info('NRG Legislative Analysis completed successfully')
