@@ -1,1 +1,3 @@
-# NRG Core Module
+from . import legislative_tracker
+
+__all__ = ['legislative_tracker']

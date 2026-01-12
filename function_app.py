@@ -1,32 +1,35 @@
-import azure.functions as func
 import logging
-import os
-from datetime import datetime
+from datetime import datetime, timezone
+
+import azure.functions as func
 
 app = func.FunctionApp()
 
 def run_analysis():
     utc_timestamp = datetime.utcnow().replace(
-        tzinfo=datetime.timezone.utc).isoformat()
+        tzinfo=timezone.utc).isoformat()
     
     logging.info('NRG Legislative Analysis started at %s', utc_timestamp)
     
     try:
+        # pylint: disable=import-outside-toplevel
         from nrg_core import legislative_tracker
         legislative_tracker.main()
         
         logging.info('NRG Legislative Analysis completed successfully')
         return True
-    except Exception as e:
-        logging.error(f'Error running legislative analysis: {str(e)}')
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logging.error('Error running legislative analysis: %s', str(e))
         raise
 
+# pylint: disable=invalid-name
 @app.route(route="run", methods=["GET", "POST"], auth_level=func.AuthLevel.FUNCTION)
 def NRGAnalysisHTTP(req: func.HttpRequest) -> func.HttpResponse:
     """
     HTTP trigger for on-demand testing
     Call via: https://<app-name>.azurewebsites.net/api/run?code=<function-key>
     """
+    logging.info('HTTP trigger invoked by: %s', req.url)
     
     try:
         run_analysis()
@@ -34,12 +37,13 @@ def NRGAnalysisHTTP(req: func.HttpRequest) -> func.HttpResponse:
             "NRG Legislative Analysis completed successfully",
             status_code=200
         )
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         return func.HttpResponse(
             f"Analysis failed: {str(e)}",
             status_code=500
         )
 
+# pylint: disable=invalid-name
 @app.schedule(schedule="0 0 8 * * *", arg_name="myTimer", run_on_startup=False,
               use_monitor=False) 
 def NRGAnalysisTimer(myTimer: func.TimerRequest) -> None:
