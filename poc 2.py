@@ -3273,12 +3273,6 @@ def fetch_bill_versions_from_openstates(openstates_id, bill_number):
             return []
         console.print(f"[green]  ✓ Found {len(versions_raw)} versions[/green]")
         
-        # DEBUG: Log API version order if enabled
-        if config.get('debug', {}).get('enabled', False) and config.get('debug', {}).get('api_order', True):
-            console.print(f"[dim]  DEBUG: API version order:[/dim]")
-            for i, v in enumerate(versions_raw):
-                console.print(f"[dim]    [{i}] {v.get('note', 'Unknown')} ({v.get('date', 'N/A')})[/dim]")
-        
         # Process each version
         versions = []
         for idx, version_data in enumerate(versions_raw, 1):

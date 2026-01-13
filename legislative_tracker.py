@@ -83,6 +83,7 @@ import sqlite3         # Local database for change tracking cache
 import hashlib         # Computing hashes for change detection
 import difflib         # Text diff computation between bill versions
 import tempfile        # Temporary directory access for Azure Functions
+import time            # For retry backoff delays
 from datetime import datetime, timedelta  # Date handling for API queries
 
 # Third-party libraries
@@ -93,6 +94,10 @@ from dotenv import load_dotenv  # Load .env file for API keys
 from rich.console import Console  # Rich terminal output
 from rich.panel import Panel      # Rich panels for formatted display
 # from rich.json import JSON        # Rich JSON syntax highlighting
+
+# Local imports
+from nrg_core.analysis.prompts import build_analysis_prompt
+from nrg_core.utils import log_llm_cost, get_cost_summary
 
 # =============================================================================
 # INITIALIZATION
@@ -982,8 +987,10 @@ def fetch_openstates_bills(jurisdiction="TX", bill_numbers=None, search_query=No
                                                             break
 
                                                     if pdf_url:
-                                                        full_bill_text = extract_pdf_text(pdf_url)
-                                                        if full_bill_text:
+                                                        full_bill_text, is_image = extract_pdf_text(pdf_url)
+                                                        if is_image:
+                                                            console.print(f"[yellow]    ⚠ PDF is image-based, OCR not implemented[/yellow]")
+                                                        elif full_bill_text:
                                                             console.print(f"[green]    ✓ Extracted {len(full_bill_text.split())} words of full text[/green]")
                                         except Exception as e:
                                             console.print(f"[yellow]    ⚠ Could not fetch full text: {e}[/yellow]")
@@ -1088,8 +1095,10 @@ def fetch_openstates_bills(jurisdiction="TX", bill_numbers=None, search_query=No
                                             break
 
                                     if pdf_url:
-                                        full_bill_text = extract_pdf_text(pdf_url)
-                                        if full_bill_text:
+                                        full_bill_text, is_image = extract_pdf_text(pdf_url)
+                                        if is_image:
+                                            console.print("[yellow]    ⚠ PDF is image-based, OCR not implemented[/yellow]")
+                                        elif full_bill_text:
                                             console.print(f"[green]    ✓ Extracted {len(full_bill_text.split())} words of full text[/green]")
                         except Exception as e:
                             console.print(f"[yellow]    ⚠ Could not fetch full text: {e}[/yellow]")
@@ -1134,6 +1143,58 @@ def fetch_openstates_bills(jurisdiction="TX", bill_numbers=None, search_query=No
 # =============================================================================
 # LLM ANALYSIS - OPENAI GPT-5
 # =============================================================================
+
+def call_llm_with_retry(llm_func, *args, max_retries=3, base_delay=1.0, **kwargs):
+    """
+    Retry LLM calls with exponential backoff.
+    
+    LLM APIs have transient failures (rate limits, timeouts). Retry recovers from
+    transient issues while backoff respects rate limits. Eventually fails gracefully
+    after max_retries if persistent issue.
+    
+    Args:
+        llm_func: The LLM function to call (analyze_with_openai or analyze_with_gemini)
+        *args: Positional arguments to pass to llm_func
+        max_retries: Maximum retry attempts (default: 3)
+        base_delay: Initial delay in seconds (default: 1.0)
+        **kwargs: Keyword arguments to pass to llm_func
+        
+    Returns:
+        dict: LLM analysis result, or error dict after all retries exhausted
+    """
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            result = llm_func(*args, **kwargs)
+            # Check if result indicates an error (LLM functions return error dict on failure)
+            if 'error' not in result:
+                return result
+            # If error in result but not an exception, still return it (degraded but valid)
+            if attempt == max_retries - 1:
+                return result
+            last_error = result.get('error', 'Unknown error')
+        except Exception as e:
+            last_error = str(e)
+            if attempt == max_retries - 1:
+                console.print(f"[red]LLM call failed after {max_retries} attempts: {e}[/red]")
+                return {
+                    "error": str(e),
+                    "business_impact_score": 0,
+                    "impact_summary": f"Analysis failed after {max_retries} retries"
+                }
+        
+        # Exponential backoff: 1s, 2s, 4s
+        delay = base_delay * (2 ** attempt)
+        console.print(f"[yellow]LLM call failed ({last_error}), retrying in {delay}s... (attempt {attempt + 1}/{max_retries})[/yellow]")
+        time.sleep(delay)
+    
+    return {
+        "error": str(last_error),
+        "business_impact_score": 0,
+        "impact_summary": f"Analysis failed after {max_retries} retries"
+    }
+
 
 def analyze_with_openai(item, nrg_context, custom_prompt=None):
     """
@@ -1180,105 +1241,11 @@ def analyze_with_openai(item, nrg_context, custom_prompt=None):
         - Cost: ~$0.05-0.15 per analysis depending on text length
         - Uses fail-soft design: returns minimal valid dict on error
     """
-    # Use custom prompt if provided, otherwise build default
+    # Use custom prompt if provided, otherwise use shared prompt builder
     if custom_prompt:
         combined_input = custom_prompt
     else:
-        # TODO: the following bill_version is using Federal terminology. This cause inconsistency with OpenStates as it focuses on States Bills. Results in misleading (might be incorrect) bill version in reports. 
-        combined_input = f"""You are a legislative analyst for NRG Energy's Government Affairs team. Your role is to provide deep, professional-grade legislative analysis similar to what a law firm would provide.
-
-NRG BUSINESS CONTEXT:
-{nrg_context}
-
-CRITICAL INSTRUCTIONS:
-1. Analyze this legislation with LEGAL PRECISION - identify specific code sections, mandatory vs permissive language, exceptions vs exemptions
-2. Focus ONLY on portions relevant to NRG Energy - ignore unrelated sections
-3. Map to NRG's business verticals (may be multiple)
-4. Extract the substance of legal changes, not just summaries
-5. Respond ONLY with valid JSON - no explanatory text before or after
-
-REQUIRED JSON STRUCTURE:
-{{
-  "bill_version": "as_filed | house_committee | passed_house | senate_committee | passed_senate | conference_committee | enrolled | unknown",
-  "business_impact_score": <0-10 integer>,
-  "impact_type": "regulatory_compliance | financial | operational | market | strategic | minimal",
-  "impact_summary": "<2-3 sentences on NRG business impact>",
-
-  "legal_code_changes": {{
-    "sections_amended": ["<Code Name> §<section>", ...],
-    "sections_added": ["New Chapter X of <Code Name>", ...],
-    "sections_deleted": ["<Code Name> §<section>", ...],
-    "chapters_repealed": ["Chapter X of <Code Name>", ...],
-    "substance_of_changes": "<Detailed explanation of what's changing from current law>"
-  }},
-
-  "application_scope": {{
-    "applies_to": ["<who this bill applies to>", ...],
-    "exclusions": ["<who/what is excluded>", ...],
-    "geographic_scope": ["<states/regions>", ...]
-  }},
-
-  "effective_dates": [
-    {{
-      "date": "<date or 'upon passage' or 'unknown'>",
-      "applies_to": "<which provisions>"
-    }}
-  ],
-
-  "mandatory_vs_permissive": {{
-    "mandatory_provisions": ["<SHALL/MUST/REQUIRED provisions>", ...],
-    "permissive_provisions": ["<MAY/CAN/OPTIONAL provisions>", ...]
-  }},
-
-  "exceptions_and_exemptions": {{
-    "exceptions": ["<exceptions - bill applies, person must prove exception applies>", ...],
-    "exemptions": ["<exemptions - person is exempt, must be proven otherwise>", ...]
-  }},
-
-  "nrg_business_verticals": ["<select from: Cyber and Grid Security, Data Privacy/Public Information Act, Disaster/Business Continuity, Electric Vehicles, Environmental/Water/Sustainability, Natural Gas, General Business, General Government, Renewables/Distributed Generation/Demand Response, Retail Commodity, Retail Non-commodity, Services, Tax, Transmission-Distribution, Wholesale Market Reforms, Artificial Intelligence, Economic Development/Workforce Development, Electric Generation, Public Utility Commission of Texas>"],
-
-  "nrg_vertical_impact_details": {{
-    "<vertical_name>": "<specific impact on this vertical>",
-    ...
-  }},
-
-  "nrg_relevant_excerpts": ["<Section X: Direct quote of NRG-relevant provision>", ...],
-
-  "affected_nrg_assets": {{
-    "generation_facilities": ["<specific facilities or types affected>", ...],
-    "geographic_exposure": ["<markets/states>", ...],
-    "business_units": ["<NRG business units>", ...]
-  }},
-
-  "financial_impact": "<estimated cost/revenue impact or 'unknown'>",
-  "timeline": "<when this matters>",
-  "risk_or_opportunity": "risk | opportunity | mixed | neutral",
-  "recommended_action": "ignore | monitor | engage | urgent",
-
-  "internal_stakeholders": ["<NRG departments/teams to involve>", ...]
-}}
-
-LEGISLATION TO ANALYZE:
-
-Type: {item['type']}
-Source: {item['source']}
-Number: {item['number']}
-Title: {item['title']}
-Status: {item['status']}
-
-Full Text/Summary:
-{item['summary']}
-
-ANALYSIS FOCUS AREAS:
-1. What code sections are being amended/added/deleted?
-2. Is this mandatory (SHALL/MUST) or permissive (MAY)?
-3. Who does this apply to? Are there exclusions or exemptions?
-4. What are the effective dates?
-5. Which NRG business verticals are affected?
-6. What are the NRG-relevant provisions (ignore irrelevant sections)?
-7. What is the business impact to NRG specifically?
-
-Provide comprehensive JSON analysis following the exact structure above."""
+        combined_input = build_analysis_prompt(item, nrg_context)
 
     try:
         # Use GPT-5 Responses API
@@ -1291,6 +1258,9 @@ Provide comprehensive JSON analysis following the exact structure above."""
 
         # Parse JSON from output_text
         analysis = json.loads(response.output_text)
+        
+        # cost
+        log_llm_cost("gpt-5", combined_input, response.output_text)
         return analysis
 
     except json.JSONDecodeError as e:
@@ -1368,107 +1338,11 @@ def analyze_with_gemini(item, nrg_context, custom_prompt=None):
         Main execution calls the appropriate function based on this setting.
     """
 
-    # Use custom prompt if provided, otherwise build default
+    # Use custom prompt if provided, otherwise use shared prompt builder
     if custom_prompt:
         combined_input = custom_prompt
     else:
-        # TODO: the following bill_version is using Federal terminology. 
-        # This cause inconsistency with OpenStates as it focuses on States Bills. 
-        # Results in misleading (might be incorrect) bill version in reports. 
-        combined_input = f"""You are a legislative analyst for NRG Energy's Government Affairs team. Your role is to provide deep, professional-grade legislative analysis similar to what a law firm would provide.
-
-NRG BUSINESS CONTEXT:
-{nrg_context}
-
-CRITICAL INSTRUCTIONS:
-1. Analyze this legislation with LEGAL PRECISION - identify specific code sections, mandatory vs permissive language, exceptions vs exemptions
-2. Focus ONLY on portions relevant to NRG Energy - ignore unrelated sections
-3. Map to NRG's business verticals (may be multiple)
-4. Extract the substance of legal changes, not just summaries
-5. Respond ONLY with valid JSON - no explanatory text before or after
-
-REQUIRED JSON STRUCTURE:
-{{
-  "bill_version": "as_filed | house_committee | passed_house | senate_committee | passed_senate | conference_committee | enrolled | unknown",
-  "business_impact_score": <0-10 integer>,
-  "impact_type": "regulatory_compliance | financial | operational | market | strategic | minimal",
-  "impact_summary": "<2-3 sentences on NRG business impact>",
-
-  "legal_code_changes": {{
-    "sections_amended": ["<Code Name> §<section>", ...],
-    "sections_added": ["New Chapter X of <Code Name>", ...],
-    "sections_deleted": ["<Code Name> §<section>", ...],
-    "chapters_repealed": ["Chapter X of <Code Name>", ...],
-    "substance_of_changes": "<Detailed explanation of what's changing from current law>"
-  }},
-
-  "application_scope": {{
-    "applies_to": ["<who this bill applies to>", ...],
-    "exclusions": ["<who/what is excluded>", ...],
-    "geographic_scope": ["<states/regions>", ...]
-  }},
-
-  "effective_dates": [
-    {{
-      "date": "<date or 'upon passage' or 'unknown'>",
-      "applies_to": "<which provisions>"
-    }}
-  ],
-
-  "mandatory_vs_permissive": {{
-    "mandatory_provisions": ["<SHALL/MUST/REQUIRED provisions>", ...],
-    "permissive_provisions": ["<MAY/CAN/OPTIONAL provisions>", ...]
-  }},
-
-  "exceptions_and_exemptions": {{
-    "exceptions": ["<exceptions - bill applies, person must prove exception applies>", ...],
-    "exemptions": ["<exemptions - person is exempt, must be proven otherwise>", ...]
-  }},
-
-  "nrg_business_verticals": ["<select from: Cyber and Grid Security, Data Privacy/Public Information Act, Disaster/Business Continuity, Electric Vehicles, Environmental/Water/Sustainability, Natural Gas, General Business, General Government, Renewables/Distributed Generation/Demand Response, Retail Commodity, Retail Non-commodity, Services, Tax, Transmission-Distribution, Wholesale Market Reforms, Artificial Intelligence, Economic Development/Workforce Development, Electric Generation, Public Utility Commission of Texas>"],
-
-  "nrg_vertical_impact_details": {{
-    "<vertical_name>": "<specific impact on this vertical>",
-    ...
-  }},
-
-  "nrg_relevant_excerpts": ["<Section X: Direct quote of NRG-relevant provision>", ...],
-
-  "affected_nrg_assets": {{
-    "generation_facilities": ["<specific facilities or types affected>", ...],
-    "geographic_exposure": ["<markets/states>", ...],
-    "business_units": ["<NRG business units>", ...]
-  }},
-
-  "financial_impact": "<estimated cost/revenue impact or 'unknown'>",
-  "timeline": "<when this matters>",
-  "risk_or_opportunity": "risk | opportunity | mixed | neutral",
-  "recommended_action": "ignore | monitor | engage | urgent",
-
-  "internal_stakeholders": ["<NRG departments/teams to involve>", ...]
-}}
-
-LEGISLATION TO ANALYZE:
-
-Type: {item['type']}
-Source: {item['source']}
-Number: {item['number']}
-Title: {item['title']}
-Status: {item['status']}
-
-Full Text/Summary:
-{item['summary']}
-
-ANALYSIS FOCUS AREAS:
-1. What code sections are being amended/added/deleted?
-2. Is this mandatory (SHALL/MUST) or permissive (MAY)?
-3. Who does this apply to? Are there exclusions or exemptions?
-4. What are the effective dates?
-5. Which NRG business verticals are affected?
-6. What are the NRG-relevant provisions (ignore irrelevant sections)?
-7. What is the business impact to NRG specifically?
-
-Provide comprehensive, detailed JSON analysis following the exact structure above. Be thorough and verbose in your analysis."""
+        combined_input = build_analysis_prompt(item, nrg_context)
 
     try:
         # Use Gemini API with JSON response mode
@@ -1484,6 +1358,10 @@ Provide comprehensive, detailed JSON analysis following the exact structure abov
 
         # Parse JSON from response
         analysis = json.loads(response.text)
+        
+        # Log cost
+        model_name = config['llm']['gemini']['model']
+        log_llm_cost(model_name, combined_input, response.text)
         return analysis
 
     except json.JSONDecodeError as e:
@@ -1512,10 +1390,11 @@ Provide comprehensive, detailed JSON analysis following the exact structure abov
 
 def analyze_with_llm(item, nrg_context):
     """
-    Route legislative analysis to the appropriate LLM provider.
+    Route legislative analysis to the appropriate LLM provider with retry.
 
     This is the primary entry point for LLM analysis. It reads the provider
-    setting from config.yaml and dispatches to the correct function.
+    setting from config.yaml and dispatches to the correct function with
+    automatic retry on transient failures.
 
     Args:
         item (dict): Legislative item to analyze (see analyze_with_openai docstring)
@@ -1530,14 +1409,17 @@ def analyze_with_llm(item, nrg_context):
         - "openai": Uses OpenAI GPT-5
     """
     provider = config['llm']['provider']
+    retry_config = config.get('llm', {}).get('retry', {})
+    max_retries = retry_config.get('max_retries', 3)
+    base_delay = retry_config.get('base_delay', 1.0)
 
     if provider == 'gemini':
-        return analyze_with_gemini(item, nrg_context)
+        return call_llm_with_retry(analyze_with_gemini, item, nrg_context, max_retries=max_retries, base_delay=base_delay)
     elif provider == 'openai':
-        return analyze_with_openai(item, nrg_context)
+        return call_llm_with_retry(analyze_with_openai, item, nrg_context, max_retries=max_retries, base_delay=base_delay)
     else:
         console.print(f"[red]Unknown LLM provider: {provider}. Defaulting to OpenAI.[/red]")
-        return analyze_with_openai(item, nrg_context)
+        return call_llm_with_retry(analyze_with_openai, item, nrg_context, max_retries=max_retries, base_delay=base_delay)
 
 
 # =============================================================================
@@ -1637,13 +1519,17 @@ Provide your analysis in the same JSON format as always, but remember you are an
         "url": bill_info.get('url', '')
     }
 
-    # Use default prompt with enforced JSON schema
+    # Use default prompt with enforced JSON schema and retry
+    retry_config = config.get('llm', {}).get('retry', {})
+    max_retries = retry_config.get('max_retries', 3)
+    base_delay = retry_config.get('base_delay', 1.0)
+    
     if provider == 'gemini':
-        return analyze_with_gemini(temp_item, nrg_context)
+        return call_llm_with_retry(analyze_with_gemini, temp_item, nrg_context, max_retries=max_retries, base_delay=base_delay)
     elif provider == 'openai':
-        return analyze_with_openai(temp_item, nrg_context)
+        return call_llm_with_retry(analyze_with_openai, temp_item, nrg_context, max_retries=max_retries, base_delay=base_delay)
     else:
-        return analyze_with_openai(temp_item, nrg_context)
+        return call_llm_with_retry(analyze_with_openai, temp_item, nrg_context, max_retries=max_retries, base_delay=base_delay)
 
 
 def compare_consecutive_versions(old_version, new_version):
@@ -3188,7 +3074,8 @@ def extract_pdf_text(pdf_url):
     - pdf_url: URL to PDF file (e.g., Texas Legislature website)
 
     Returns:
-    - Extracted text as string, or None if extraction fails
+    - tuple: (text, is_image_based) where text is extracted content or None,
+             and is_image_based indicates if PDF appears to be scanned images
     """
     try:
         import pdfplumber
@@ -3206,26 +3093,37 @@ def extract_pdf_text(pdf_url):
 
         # Extract text from all pages
         text = ""
+        char_count = 0
         with pdfplumber.open(pdf_bytes) as pdf:
             console.print(f"[dim]    Extracting text from {len(pdf.pages)} pages...[/dim]")
-            for page_num, page in enumerate(pdf.pages, 1):
+            for page in pdf.pages:
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n"
+                    char_count += len(page_text)
+            
+            # Heuristic: If PDF has pages but very little text, likely scanned images
+            # Typical bill page has 2000-4000 chars; <100 chars/page suggests images
+            is_image_based = len(pdf.pages) > 0 and (char_count / max(len(pdf.pages), 1)) < 100
+
+        if is_image_based:
+            console.print("[yellow]    ⚠ PDF appears to be scanned images (low text density)[/yellow]")
+            # TODO: Implement OCR fallback (Azure Computer Vision or Tesseract)
+            return (None, True)
 
         if not text.strip():
             console.print("[yellow]    ⚠ PDF appears empty or text extraction failed[/yellow]")
-            return None
+            return (None, False)
 
         console.print(f"[green]    ✓ Extracted {len(text)} characters ({len(text.split())} words)[/green]")
-        return text
+        return (text, False)
 
     except httpx.HTTPStatusError as e:
         console.print(f"[red]    HTTP Error downloading PDF: {e.response.status_code}[/red]")
-        return None
+        return (None, False)
     except Exception as e:
         console.print(f"[red]    Error extracting PDF text: {e}[/red]")
-        return None
+        return (None, False)
 
 
 def fetch_bill_versions_from_openstates(openstates_id, bill_number):
@@ -3274,12 +3172,6 @@ def fetch_bill_versions_from_openstates(openstates_id, bill_number):
             return []
         console.print(f"[green]  ✓ Found {len(versions_raw)} versions[/green]")
         
-        # DEBUG: Log API version order if enabled
-        if config.get('debug', {}).get('enabled', False) and config.get('debug', {}).get('api_order', True):
-            console.print(f"[dim]  DEBUG: API version order:[/dim]")
-            for i, v in enumerate(versions_raw):
-                console.print(f"[dim]    [{i}] {v.get('note', 'Unknown')} ({v.get('date', 'N/A')})[/dim]")
-        
         # Process each version
         versions = []
         for idx, version_data in enumerate(versions_raw, 1):
@@ -3301,7 +3193,11 @@ def fetch_bill_versions_from_openstates(openstates_id, bill_number):
             console.print(f"[cyan]  Version {idx}/{len(versions_raw)}: {version_type}[/cyan]")
 
             # Extract PDF text
-            full_text = extract_pdf_text(pdf_url)
+            full_text, is_image = extract_pdf_text(pdf_url)
+
+            if is_image:
+                console.print("[yellow]    ⚠ PDF is image-based, skipping version[/yellow]")
+                continue
 
             if full_text:
                 text_hash = compute_bill_hash(full_text)
@@ -3481,6 +3377,37 @@ def get_version_analysis(version_id, conn):
         WHERE version_id = ?
     ''', (version_id,))
 
+    row = cursor.fetchone()
+    if row and row[0]:
+        return json.loads(row[0])
+    return None
+
+
+def get_cached_analysis_by_hash(text_hash, conn):
+    """
+    Look up cached LLM analysis by text hash.
+    If the same text was analyzed before (regardless of bill/version_id), return that analysis.
+    
+    Args:
+        text_hash: SHA-256 hash of version text
+        conn: Database connection
+        
+    Returns:
+        Analysis dict if found, None otherwise
+    """
+    if not text_hash or not conn:
+        return None
+    
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT va.full_analysis_json
+        FROM bill_versions bv
+        JOIN version_analyses va ON bv.version_id = va.version_id
+        WHERE bv.text_hash = ?
+        ORDER BY va.analyzed_at DESC
+        LIMIT 1
+    ''', (text_hash,))
+    
     row = cursor.fetchone()
     if row and row[0]:
         return json.loads(row[0])
@@ -3919,7 +3846,7 @@ def main():
                     console.print(f"[yellow]⚠ Skipping {item['number']}: Missing version tracking metadata[/yellow]\n")
 
     
-    # Phase 2: Change Detection & Analysis - Hash comparison and LLM analysis
+    # Change Detection & Analysis - Hash comparison and LLM analysis
     if change_tracking_enabled and db_conn:
         console.print("\n[bold cyan]🔍 Checking for changes...[/bold cyan]\n")
     console.print(f"\n[bold cyan]🤖 Analyzing with {llm_provider.upper()} ({llm_model})...[/bold cyan]\n")
@@ -3977,44 +3904,24 @@ def main():
             for v_idx, version in enumerate(item['versions'], 1):
                 console.print(f"[dim]    Version {v_idx}/{len(item['versions'])}: {version['version_type']}[/dim]")
 
-                # Independent version analysis
-                # TODO: OPTIMIZATION - Implement cached version analysis retrieval
-                # Current: Always runs LLM analysis on every execution
-                # Problem: Re-analyzing unchanged versions wastes LLM costs and API limits
-                # Solution: Check get_version_analysis() first, only call analyze_bill_version() if no cached result
+                # Hash-based cache lookup before LLM call - catches identical text across different bills/versions
+                text_hash = version.get('text_hash')
+                cached_analysis = None
                 
-                # NOTE: LLM Error Handling
-                # analyze_bill_version() -> analyze_with_gemini/openai() handle API errors via try-except
-                # On error: Returns dict with {"error": "...", "business_impact_score": 0, "impact_summary": "Analysis failed"}
-                # This means analysis continues with degraded data rather than stopping execution
-                # Risk: If all versions fail, version_analyses = [] and final analysis = {} (see line 4004)
+                if change_tracking_enabled and db_conn and text_hash:
+                    cached_analysis = get_cached_analysis_by_hash(text_hash, db_conn)
                 
-                # TODO: CRITICAL BUG - Missing bill-level change analysis in Path A
-                # Problem: when a bill already has versions but only metadata changes, 
-                # it stays in Path A which doesn't analyze the metadata change.
-                # occurs when: 
-                #    has_versions=True AND change_data['has_changes']=True AND no new versions added
-                # This might results in wrong cost assumptions, 
-                # misses critical intermediate signals (committee passage, amendments filed, etc.)
-                # Example: 
-                #   Run 1 (Day 1):
-                #       - Fetch bill, has version: ["Introduced"]
-                #       - has_versions = True → Path A
-                #       - Analyzes "Introduced" version
-
-                #   Run 2 (Day 5):
-                #       - Bill status changed: "In Committee" → "Passed Committee"
-                #       - Fetch versions: Still ["Introduced"] (no new version yet)
-                #       - has_versions = True → Path A again
-                #       - change_data detects status change
-                #       - Path A re-analyzes old "Introduced" version
-                #       - Path A sets change_impact = None (doesn't analyze status change)
-                version_analysis = analyze_bill_version(
-                    version['full_text'],
-                    version['version_type'],
-                    item,
-                    nrg_context
-                )
+                if cached_analysis:
+                    console.print(f"[green]      ✓ Using cached analysis (hash match)[/green]")
+                    version_analysis = cached_analysis
+                else:
+                    # No cache hit - call LLM
+                    version_analysis = analyze_bill_version(
+                        version['full_text'],
+                        version['version_type'],
+                        item,
+                        nrg_context
+                    )
 
                 version_analyses.append({
                     'version': version,
@@ -4066,6 +3973,15 @@ def main():
             
             analysis = version_analyses[0]['analysis'] if version_analyses else {}
 
+            # Analyze bill-level changes in Path A (previously only done in Path B)
+            # This catches status changes like "In Committee" to "Passed Committee" even when
+            # no new version text exists yet
+            change_impact = None
+            if change_data and change_data['has_changes'] and not change_data.get('is_new', False):
+                if config.get('change_tracking', {}).get('analyze_changes_with_llm', True):
+                    console.print(f"[dim]    Analyzing bill-level change impact...[/dim]")
+                    change_impact = analyze_changes_with_llm(item, change_data, nrg_context)
+
             # Store result with version info
             result = {
                 "item": item,
@@ -4073,7 +3989,7 @@ def main():
                 "version_analyses": version_analyses,
                 "version_diffs": version_diffs,
                 "change_data": change_data,
-                "change_impact": None
+                "change_impact": change_impact
             }
         else:
             # Regular analysis if change_tracking enabled (no versions or version tracking disabled)
@@ -4158,6 +4074,15 @@ def main():
         console.print(f"  New Bills:        {new_bills}")
         console.print(f"  Modified Bills:   {modified_bills}")
         console.print(f"  Unchanged Bills:  {unchanged_bills}")
+
+    # LLM cost summary
+    cost_summary = get_cost_summary()
+    if cost_summary['total_calls'] > 0:
+        console.print(f"\n[bold]LLM Cost Estimate:[/bold]")
+        console.print(f"  Total Calls:      {cost_summary['total_calls']}")
+        console.print(f"  Input Tokens:     {cost_summary['total_input_tokens']:,}")
+        console.print(f"  Output Tokens:    {cost_summary['total_output_tokens']:,}")
+        console.print(f"  Estimated Cost:   ${cost_summary['estimated_cost_usd']:.4f}")
 
     console.print()
 
