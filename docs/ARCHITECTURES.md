@@ -14,8 +14,8 @@ Bill Ingestion
     ├── Cross-reference official records
     ↓
 [Tier 2: Multi-Model Analysis]
-    ├── Claude Opus 4.5 (primary)
-    ├── GPT-5.2 (validation)
+    ├── Gemini 3 Pro (primary) - #1 on legal benchmarks
+    ├── GPT-5 (validation)
     └── Consensus check
     ↓
 [Tier 3: Eval Agent Scoring]
@@ -48,9 +48,9 @@ Bill Ingestion
 Bill Ingestion
     ↓
 [Parallel Analysis - Run Simultaneously]
-    ├── Claude Opus 4.5 → Impact score A
-    ├── GPT-5.2 → Impact score B
-    └── Gemini 3 Pro → Impact score C
+    ├── Gemini 3 Pro → Impact score A (#1 legal benchmark)
+    ├── GPT-5 → Impact score B
+    └── Claude Opus 4.5 → Impact score C
     ↓
 [Consensus Detection]
     ├── All agree (±1 score) → High confidence
@@ -90,7 +90,7 @@ Bill Ingestion
     ↓
 [Analysis Phase - Per Bill]
     ├── API Data Enrichment (LegiScan/OpenStates)
-    ├── Claude Opus 4.5: Primary analysis (200K context)
+    ├── Gemini 3 Pro: Primary analysis (#1 legal benchmark)
     ↓
 [Eval Agent: Quality Check]
     ├── Fact accuracy (bill # matches API)
@@ -102,9 +102,9 @@ Bill Ingestion
     ↓
 [Conditional Validation]
     IF (impact ≥7 OR confidence <80):
-        ├── Run GPT-5.2 second opinion
+        ├── Run GPT-5 second opinion
         ├── Compare analyses
-        └── Eval agent arbitrates
+        └── GPT-5 Eval agent arbitrates
     ELSE:
         └── Auto-publish with monitoring
     ↓
@@ -135,8 +135,8 @@ Bill Ingestion
     ├── Extract official summary
     └── Flag data quality issues
     ↓
-[Claude Opus 4.5 Analysis]
-    └── Single model with structured output
+[Gemini 3 Pro Analysis]
+    └── Single model with structured output (#1 legal benchmark)
     ↓
 [Eval Agent: Deep Validation]
     ├── Verify each claim against:
@@ -234,6 +234,12 @@ class LegislativeAnalysisEvaluator:
 
 ### **Eval Agent Implementation Options**
 
+**RECOMMENDED: GPT-5 (Superior reasoning for legal analysis)**
+- Cost: Variable (no budget constraint)
+- Latency: 3-6s (acceptable per requirements)
+- Accuracy: 95-98%
+- Best for: Complex legal reasoning, business context alignment
+
 **Option A: LLM-as-Judge (GPT-4o Mini)**
 - Cost: $0.02/eval
 - Latency: 2-4s
@@ -255,49 +261,58 @@ class LegislativeAnalysisEvaluator:
 
 ### **Why This Design**
 
-Combines best of Option 1 + Option 3 with adaptive complexity:
+Combines best of Option 1 + Option 3 with accuracy-first approach:
+- **Gemini 3 Pro**: #1 ranked on legal benchmarks (https://www.vals.ai/benchmarks/legal_bench)
+- **GPT-5 Eval Agent**: Superior reasoning for quality validation
+- **Discovery Phase**: Ensures no critical bills are missed
+- **No latency/budget constraints**: Optimized for accuracy and recall
 
 ```
-[Phase 1: Discovery & Enrichment - Background Weekly]
-    └── Gemini Deep Research (optional): Find edge-case bills
+[Phase 1: Discovery & Enrichment - Weekly Background]
+    ├── Gemini Deep Research: Find new bills proactively
+    ├── Deep Research Agent: Cross-reference news/industry sources
+    └── Output: Comprehensive prioritized bill list
     
 [Phase 2: Per-Bill Analysis Pipeline]
     
-    Step 1: API Fact Check (1s)
-    ├── Validate metadata
-    └── Extract official text
+    Step 1: API Fact Check (1-2s)
+    ├── Validate metadata (bill #, dates, sponsors)
+    ├── Extract official text
+    └── Cross-reference official records
     
-    Step 2: Primary Analysis (5-8s)
-    └── Claude Opus 4.5 (200K context)
+    Step 2: Primary Analysis (8-15s)
+    └── Gemini 3 Pro (#1 legal benchmark)
     
-    Step 3: Eval Agent Scoring (2-4s)
+    Step 3: GPT-5 Eval Agent Scoring (3-6s)
     ├── Fact accuracy: 0-100
-    ├── Business alignment: 0-100
-    ├── Confidence: 0-100
+    ├── Business context alignment: 0-100
+    ├── Impact score reasonableness: 0-100
+    ├── Overall confidence: 0-100
     
-    Step 4: Adaptive Validation (0-10s)
+    Step 4: Adaptive Validation (0-15s)
     IF (impact ≥7 OR confidence <85):
-        └── Run GPT-5.2 second opinion
-        └── Eval agent compares & arbitrates
+        └── Run GPT-5 second opinion
+        └── GPT-5 Eval agent compares & arbitrates
     ELSE:
         └── Skip (trust primary)
     
     Step 5: Intelligent Routing (<1s)
-    ├── High confidence (>90) + Low impact (<4) → Auto-publish
-    ├── High confidence (>85) + Medium impact (4-6) → Auto-publish w/ flag
-    └── Otherwise → Human review w/ eval report
+    ├── High confidence (>95) + Low impact (<4) → Auto-publish
+    ├── High confidence (>90) + Medium impact (4-6) → Auto-publish w/ flag
+    └── Otherwise → Human review w/ GPT-5 eval report
 ```
 
 ### **Performance Profile**
 
 | Metric | Value | Justification |
 |--------|-------|---------------|
-| **Accuracy** | 95-97% | Adaptive dual-model on critical bills |
-| **Avg Latency** | 8-12s (low), 18-22s (high) | Conditional validation |
-| **Cost/bill** | $0.40 (low), $1.20 (high) | Pay for accuracy when needed |
-| **Auto rate** | 75-80% | Conservative but safe |
-| **False pos** | <2% | Dual validation on high-risk |
-| **Monthly cost** | $12-18 | 70% low-impact, 30% high-impact mix |
+| **Accuracy** | 96-99% | Gemini 3 Pro + GPT-5 dual validation |
+| **False Positive** | <1% | GPT-5 eval + dual-model on high-impact |
+| **Coverage** | 98%+ | Discovery phase finds edge cases |
+| **Avg Latency** | 12-20s (low), 25-35s (high) | No latency constraints |
+| **Cost/bill** | $0.60 (low), $2.00 (high) | No budget constraints |
+| **Auto rate** | 70-75% | Conservative thresholds for <1% false pos |
+| **Monthly cost** | Variable | Optimized for accuracy, not cost |
 
 ---
 
@@ -307,35 +322,42 @@ Combines best of Option 1 + Option 3 with adaptive complexity:
 1. API fact-checking module
    - Integrate LegiScan/OpenStates
    - Validate bill metadata
+   - Cross-reference official records
    
-2. Claude Opus 4.5 integration
+2. Gemini 3 Pro integration
    - Structured output schema
-   - 200K context handling
+   - Legal benchmark optimization
+   - Test on sample bills
 
-### **Week 2: Eval Agent**
-1. Build eval agent (recommend Claude Sonnet)
+### **Week 2: GPT-5 Eval Agent**
+1. Build GPT-5 eval agent
    - Fact verification logic
    - BP business context database
-   - Scoring algorithms
+   - Multi-dimensional scoring (accuracy, business alignment, impact)
    
 2. Define confidence thresholds
    - Test on historical bills
-   - Calibrate cutoffs
+   - Calibrate for <1% false positive rate
+   - Establish conservative cutoffs
 
 ### **Week 3: Adaptive Validation**
-1. GPT-5.2 integration for second opinions
-2. Consensus logic
-3. Eval agent arbitration rules
+1. GPT-5 integration for second opinions
+2. Dual-model consensus logic
+3. GPT-5 eval agent arbitration rules
+4. Test dual-model pipeline on high-impact bills
 
 ### **Week 4: Routing & Monitoring**
-1. Auto-publish pipeline
-2. Human review queue
+1. Auto-publish pipeline with conservative thresholds
+2. Human review queue with GPT-5 eval reports
 3. Dashboard for monitoring false positives
+4. Accuracy tracking system
 
-### **Month 2 (Optional): Discovery Enhancement**
-1. Add Gemini Deep Research weekly scans
-2. Cross-reference with industry news
-3. Proactive bill discovery
+### **Week 5-6: Discovery Enhancement**
+1. Gemini Deep Research weekly scans
+2. Cross-reference with industry news sources
+3. Proactive bill discovery automation
+4. Prioritized bill list generation
+5. Test discovery coverage on historical data
 
 ---
 
@@ -375,12 +397,17 @@ If cost is critical, start with **Option 4** (Lightweight):
 
 ---
 
-## Questions for Refinement
+## Architecture Requirements (Confirmed)
 
-1. **What's acceptable false positive rate?** <1%, <2%, <3%?
-2. **Human review capacity?** How many bills/month can team handle?
-3. **Latency tolerance?** OK to wait 20s for high-impact bills?
-4. **Budget ceiling?** Hard cap on monthly API costs?
-5. **Discovery priority?** How important is finding bills you don't know exist?
+1. **False Positive Rate:** <1% (accuracy and recall are critical - cannot lose money)
+2. **Human Review Capacity:** TBD (will be determined based on system performance)
+3. **Latency Tolerance:** No constraints (processes can run for 24hrs if needed - accuracy is paramount)
+4. **Budget Ceiling:** No limit (optimized for accuracy, not cost)
+5. **Discovery Priority:** Very important (cannot miss critical bills)
 
-Happy to refine architecture based on answers.
+**Architecture Decision:** Option 1 + Option 3 Hybrid
+- **Primary Analysis:** Gemini 3 Pro (#1 on legal benchmarks - https://www.vals.ai/benchmarks/legal_bench)
+- **Eval Agent:** GPT-5 (superior reasoning for legal analysis)
+- **Second Opinion:** GPT-5 (for high-impact or low-confidence bills)
+- **Discovery:** Gemini Deep Research (weekly proactive bill discovery)
+- **Target Performance:** 96-99% accuracy, <1% false positive rate, 98%+ coverage
