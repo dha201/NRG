@@ -388,6 +388,7 @@ Return ONLY a JSON object with this structure:
     for attempt in range(max_retries):
         try:
             if provider == 'gemini':
+                # Use high token budget for thinking models (8192) to prevent truncation
                 response = gemini_client.models.generate_content(
                     model=config['llm']['gemini']['model'],
                     contents=prompt,

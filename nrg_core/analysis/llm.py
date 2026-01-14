@@ -51,26 +51,24 @@ ERROR_RESPONSE: dict[str, Any] = {
 
 def extract_json_from_gemini_response(response: Any) -> str:
     """
-    Extract JSON string from Gemini response, handling thought_signature parts.
+    Safely extract JSON from Gemini 3 thinking model responses.
     
-    Gemini 3 models return responses with multiple parts including thought_signature
-    (reasoning traces). The SDK's response.text accessor concatenates all text parts,
-    causing "Extra data" JSON parse errors. This function extracts ONLY the first
-    non-thought text part to get clean JSON.
+    Gemini 3 returns multi-part responses with encrypted reasoning traces (thought_signature)
+    that cause JSON parse errors when concatenated. This extracts only the clean JSON part.
     
     Args:
-        response: Gemini API response object with candidates[0].content.parts
+        response: Gemini API response with candidates[0].content.parts structure
         
     Returns:
-        str: JSON string from first text part
+        str: Clean JSON string from first non-thought text part
         
     Raises:
-        ValueError: If response has no candidates, no parts, or no text parts
+        ValueError: If response structure is invalid or no text parts found
         
     Example:
         >>> response = gemini_client.models.generate_content(...)
         >>> json_str = extract_json_from_gemini_response(response)
-        >>> analysis = json.loads(json_str)  # Safe - no NoneType or concatenation
+        >>> analysis = json.loads(json_str)  # Safe parsing without NoneType errors
     """
     # Debug: response structure
     if _debug_llm_responses:
