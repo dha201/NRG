@@ -11,7 +11,33 @@ Tests the REAL system end-to-end:
 Calibrated against Texas HB 4238 case from LLM_MODEL_COMPARISON.md.
 Expert judgment: Score 2/10, verticals = [General Business, Retail Non-commodity]
 
-Run with: pytest tests/test_llm_quality/test_llm_as_judge.py -v -s
+=== HOW TO RUN ===
+Quick test (see full output with judge reasoning):
+  pytest tests/test_llm_quality/test_llm_as_judge.py -v -s
+
+Run all LLM quality tests:
+  pytest -m llm -v -s
+
+=== WHEN TO RUN ===
+- Before deploying model/prompt changes (regression check)
+- After adding new bills to golden dataset (calibration)
+- Weekly in CI/CD for quality monitoring
+- When analysis scores seem off (diagnostic)
+
+=== EXPANDING THE GOLDEN DATASET ===
+Currently testing 1 bill (HB 4238, low-impact). Need 50+ bills across:
+- Impact levels: low (2/10), medium (5/10), high (8/10)
+- Bill types: regulatory, financial, operational, market
+- Verticals: Power Gen, EV Charging, Retail, Tax, Environmental
+
+To add a bill:
+1. Get expert human judgment (score, verticals, rationale)
+2. Add to GOLDEN_BILLS dict below
+3. Add corresponding EXPERT_JUDGMENT entry
+4. Run test to calibrate judge thresholds
+5. Adjust thresholds if judge consistently disagrees with experts
+
+Goal: Judge correlation >0.7 with human experts across all bills
 """
 import pytest
 import json
@@ -34,9 +60,13 @@ console = Console()
 
 
 # =============================================================================
-# GOLDEN TEST CASE: Texas HB 4238 (from LLM_MODEL_COMPARISON.md)
+# GOLDEN TEST CASES - Expert-Validated Bills for Judge Calibration
 # =============================================================================
+# These are bills where human experts have provided ground truth judgments
+# Judge accuracy is measured by correlation with these expert assessments
+# TODO: Expand from 1 bill to 50+ covering diverse impact levels and verticals
 
+# Low-impact bill: Identity theft debt collection (minimal NRG exposure)
 GOLDEN_BILL_HB4238 = {
     "source": "OpenStates",
     "type": "State Bill",
@@ -51,6 +81,7 @@ GOLDEN_BILL_HB4238 = {
     "url": "https://capitol.texas.gov/BillLookup/History.aspx?LegSess=89R&Bill=HB4238",
 }
 
+# Expert judgment from legal/policy team - this is ground truth for judge calibration
 EXPERT_JUDGMENT_HB4238 = {
     "expected_score": 2,
     "score_tolerance": 1,
@@ -65,19 +96,23 @@ EXPERT_JUDGMENT_HB4238 = {
 
 
 # =============================================================================
-# G-EVAL METRIC FACTORIES
+# G-EVAL METRIC FACTORIES - Split Evaluation for Better Diagnostics
+# =============================================================================
+# Why split metrics? Single monolithic judge can't pinpoint failure cause
+# Score accuracy vs vertical accuracy need different thresholds and evaluation logic
+# Each metric uses chain-of-thought reasoning for explainability
+#
 # References:
 # - G-Eval paper: https://arxiv.org/pdf/2303.16634
 # - DeepEval docs: https://deepeval.com/docs/metrics-llm-evals
 # - Gemini integration: https://deepeval.com/integrations/models/gemini
-# =============================================================================
 
 def create_score_accuracy_metric(api_key: str) -> GEval:
     """
-    Create G-Eval metric for business impact score accuracy.
+    Judges if analysis score matches expert judgment (±1 tolerance)
     
-    Uses Gemini 3 Flash as judge to evaluate if the analysis score
-    matches expert judgment and reflects NRG's actual business exposure.
+    Threshold 0.5 = lenient, allows some LLM scoring variance
+    Catches overstatement (e.g., scoring 8/10 for minimal-impact bills)
     """
     judge_model = GeminiModel(
         model="gemini-3-flash-preview",
@@ -85,6 +120,8 @@ def create_score_accuracy_metric(api_key: str) -> GEval:
         temperature=0.1
     )
     
+    # Hardcoded steps (not generated) for consistency across runs
+    # Each step is explicit instruction for judge's chain-of-thought reasoning
     return GEval(
         name="Business Impact Score Accuracy",
         evaluation_steps=[
@@ -99,19 +136,18 @@ def create_score_accuracy_metric(api_key: str) -> GEval:
             LLMTestCaseParams.EXPECTED_OUTPUT
         ],
         model=judge_model,
-        threshold=0.5,
-        verbose_mode=True
+        threshold=0.5,  # Tuned via trial - may need adjustment with more golden bills
+        verbose_mode=True  # Shows reasoning but doesn't print to console (use metric.reason)
     )
 
 
 def create_vertical_accuracy_metric(api_key: str) -> GEval:
     """
-    Create G-Eval metric for vertical classification accuracy.
+    Judges if analysis flags correct business verticals (not unrelated ones)
     
-    Evaluates if the analysis correctly identifies affected business verticals
-    without overstating impact (e.g., pay-at-pump != debt collection).
-    
-    Reference: https://www.evidentlyai.com/llm-guide/llm-as-a-judge
+    Threshold 0.3 = very lenient, only fails on egregious errors
+    Catches hallucinations like "Electric Vehicles" for debt collection bills
+    Lower threshold because vertical taxonomy is fuzzy (Commodity vs Non-commodity)
     """
     judge_model = GeminiModel(
         model="gemini-3-flash-preview",
@@ -133,14 +169,17 @@ def create_vertical_accuracy_metric(api_key: str) -> GEval:
             LLMTestCaseParams.EXPECTED_OUTPUT
         ],
         model=judge_model,
-        threshold=0.3,
+        threshold=0.3,  # Lower than score metric - vertical classification is harder
         verbose_mode=True
     )
 
 
 # =============================================================================
-# END-TO-END ANALYSIS QUALITY TEST
+# END-TO-END ANALYSIS QUALITY TEST - Real Production Pipeline
 # =============================================================================
+# Tests actual analyze_with_gemini() with real config, prompts, schemas
+# Not mocked - calls live LLM APIs (Gemini 3 Pro for analysis, 3 Flash for judge)
+# Takes ~40s per bill due to two LLM calls (analysis + judge evaluation)
 
 @pytest.mark.slow
 @pytest.mark.llm
@@ -149,33 +188,34 @@ class TestAnalysisQuality:
     
     def test_analyze_and_judge(self):
         """
-        End-to-end test: Real analysis + DeepEval G-Eval judge.
+        Validates analysis quality by comparing LLM output to expert judgment
         
-        Tests the REAL production pipeline:
-        1. Runs analyze_with_gemini with actual NRG business context
-        2. Uses DeepEval G-Eval metrics with Gemini 2.5 Pro judge
-        3. Splits evaluation into score accuracy + vertical accuracy
+        Flow:
+        1. Run real analysis (Gemini 3 Pro, production config)
+        2. Judge evaluates analysis (Gemini 3 Flash, G-Eval framework)
+        3. Compare judge scores to thresholds (0.5 for score, 0.3 for verticals)
         
-        Architecture:
-        - Analysis LLM: Uses production config from config.yaml
-        - Judge LLM: gemini-3-flash-preview (Gemini 3 Flash)
+        Why:
+        - Catches quality regressions when changing models/prompts
+        - Detects overstatement (scoring high-impact when actually low)
+        - Identifies hallucinations (flagging unrelated business verticals)
         
-        References:
-        - DeepEval pytest integration: https://deepeval.com/docs/metrics-llm-evals
-        - G-Eval methodology: https://www.confident-ai.com/blog/g-eval-the-definitive-guide
+        Current limitation: Only 1 golden bill - need 50+ for robust calibration
         """
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             pytest.skip("GOOGLE_API_KEY not set")
         
         # === STEP 1: Run REAL analysis ===
+        # Uses production analyze_with_gemini() - not mocked, calls live API
+        # Loads actual config.yaml (model, temp, tokens) and nrg_business_context.txt
         console.print("\n" + "="*80, style="bold cyan")
         console.print("STEP 1: Running analyze_with_gemini (real system)", style="bold cyan")
         console.print("="*80, style="bold cyan")
         
         client = genai.Client(api_key=api_key)
         nrg_context = load_nrg_context()
-        config = load_config()  # Use production config from config.yaml
+        config = load_config()  # Real config - currently Gemini 3 Pro at temp 0.2
         
         console.print(f"[dim]Using analysis model: {config['llm']['gemini']['model']}[/dim]")
         
@@ -197,6 +237,8 @@ class TestAnalysisQuality:
         assert "business_impact_score" in analysis
         
         # === STEP 2: Create DeepEval test case ===
+        # Packages analysis output + expert judgment for judge evaluation
+        # Judge compares actual_output (LLM analysis) to expected_output (expert ground truth)
         console.print("\n" + "="*80, style="bold magenta")
         console.print("STEP 2: Creating DeepEval test case", style="bold magenta")
         console.print("="*80, style="bold magenta")
@@ -213,6 +255,8 @@ class TestAnalysisQuality:
         )
         
         # === STEP 3: Create G-Eval metrics ===
+        # Split metrics = better diagnostics than single monolithic judge
+        # Can tune thresholds independently (score needs 0.5, verticals only need 0.3)
         console.print("\n" + "="*80, style="bold yellow")
         console.print("STEP 3: Evaluating with G-Eval metrics (Gemini 3 Flash judge)", style="bold yellow")
         console.print("="*80, style="bold yellow")
@@ -221,12 +265,16 @@ class TestAnalysisQuality:
         vertical_metric = create_vertical_accuracy_metric(api_key)
         
         # === STEP 4: Manually measure metrics to get reasoning ===
+        # DeepEval quirk: assert_test() doesn't populate metric.score/reason attributes
+        # Must call measure() explicitly to capture judge's chain-of-thought reasoning
         console.print("\n[cyan]Evaluating metrics manually to capture reasoning...[/cyan]")
         
         score_metric.measure(test_case)
         vertical_metric.measure(test_case)
         
         # === STEP 4.5: Display judge reasoning ===
+        # Shows judge's chain-of-thought explanation for scores
+        # This is the "why" - helps debug when judge disagrees with expectations
         console.print("\n" + "="*80, style="bold magenta")
         console.print("Judge Reasoning (G-Eval)", style="bold magenta")
         console.print("="*80, style="bold magenta")
@@ -264,10 +312,13 @@ class TestAnalysisQuality:
         console.print(f"  [bold {color}]{status}[/bold {color}] (threshold: {vertical_metric.threshold})")
         
         # === STEP 4.6: Run DeepEval assertion ===
+        # Final validation - fails test if either metric below threshold
+        # Redundant with measure() above but required for DeepEval test framework
         console.print("\n[cyan]Running DeepEval assert_test for final validation...[/cyan]")
         assert_test(test_case, [score_metric, vertical_metric])
         
         # === STEP 5: Display results ===
+        # Summary for quick scan - detailed reasoning already shown in Step 4.5
         console.print("\n" + "="*80, style="bold green")
         console.print("STEP 4: Results Summary", style="bold green")
         console.print("="*80, style="bold green")
