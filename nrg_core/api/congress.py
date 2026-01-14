@@ -10,7 +10,7 @@ from nrg_core.db.cache import compute_bill_hash
 
 console = Console()
 
-CONGRESS_API_KEY: Optional[str] = os.getenv("CONGRESS_GOV_API_KEY")
+CONGRESS_API_KEY: Optional[str] = os.getenv("CONGRESS_API_KEY")
 CONGRESS_BASE_URL: str = "https://api.congress.gov/v3"
 CONGRESS_NUMBER: str = "118"
 API_TIMEOUT: float = 30.0

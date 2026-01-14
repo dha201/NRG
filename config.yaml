@@ -18,8 +18,8 @@ debug:
 # =============================================================================
 llm:
   # Active provider: "gemini" or "openai"
-  #provider: "gemini"
-  provider: "openai"
+  provider: "gemini"
+  #provider: "openai"
 
   # OpenAI Configuration (GPT-5)
   openai:

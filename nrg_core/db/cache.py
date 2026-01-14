@@ -99,7 +99,6 @@ def init_database(db_path: str) -> sqlite3.Connection:
 
 
 def get_cached_bill(bill_id: str, conn: sqlite3.Connection) -> Optional[dict[str, Any]]:
-    """Retrieve bill from cache by bill_id."""
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM bills WHERE bill_id = ?', (bill_id,))
     row = cursor.fetchone()
@@ -120,7 +119,6 @@ def get_cached_bill(bill_id: str, conn: sqlite3.Connection) -> Optional[dict[str
 
 
 def save_bill_to_cache(bill: dict[str, Any], conn: sqlite3.Connection) -> None:
-    """Save or update bill in cache with amendments."""
     bill_id = f"{bill['source']}:{bill['number']}"
     bill_text = bill.get('summary', '')
     text_hash = compute_bill_hash(bill_text)
@@ -162,7 +160,6 @@ def save_bill_to_cache(bill: dict[str, Any], conn: sqlite3.Connection) -> None:
 
 
 def save_bill_version(bill_id: str, version: dict[str, Any], conn: sqlite3.Connection) -> str:
-    """Save bill version to database and return version_id."""
     version_id = f"{bill_id}:v{version['version_number']}:{version['version_type'].replace(' ', '_')}"
 
     cursor = conn.cursor()
@@ -188,7 +185,6 @@ def save_bill_version(bill_id: str, version: dict[str, Any], conn: sqlite3.Conne
 
 
 def save_version_analysis(version_id: str, analysis: dict[str, Any], conn: sqlite3.Connection) -> None:
-    """Save LLM analysis of a bill version."""
     cursor = conn.cursor()
     cursor.execute('''
         INSERT OR REPLACE INTO version_analyses
@@ -210,7 +206,6 @@ def save_version_analysis(version_id: str, analysis: dict[str, Any], conn: sqlit
 
 
 def get_bill_versions(bill_id: str, conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    """Retrieve all versions for a bill from database."""
     cursor = conn.cursor()
     cursor.execute('''
         SELECT version_id, version_type, version_date, version_number, pdf_url, full_text, text_hash, word_count
@@ -237,7 +232,6 @@ def get_bill_versions(bill_id: str, conn: sqlite3.Connection) -> list[dict[str, 
 
 
 def get_version_analysis(version_id: str, conn: sqlite3.Connection) -> Optional[dict]:
-    """Retrieve LLM analysis for a specific version."""
     cursor = conn.cursor()
     cursor.execute('''
         SELECT full_analysis_json

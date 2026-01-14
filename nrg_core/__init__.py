@@ -1,5 +1,8 @@
-# Submodules - import these directly (e.g., from nrg_core.db import cache)
-# legislative_tracker is imported separately due to heavy dependencies
+# NRG Legislative Tracker Core Library
+# Main entry point: from nrg_core.orchestrator import run_analysis
+
+from .config import load_config, load_nrg_context
+from .orchestrator import run_analysis
 
 from .models import (
     Bill,
@@ -21,6 +24,10 @@ from .utils import (
 )
 
 __all__ = [
+    # Main entry point
+    "run_analysis",
+    "load_config",
+    "load_nrg_context",
     # Models
     "Bill",
     "BillVersion", 

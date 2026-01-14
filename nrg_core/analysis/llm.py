@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 from rich.console import Console
 
-from nrg_core.analysis.prompts import build_analysis_prompt
+from nrg_core.analysis.prompts import build_analysis_prompt, GEMINI_RESPONSE_SCHEMA
 from nrg_core.utils import log_llm_cost
 
 console = Console()
@@ -14,6 +14,85 @@ ERROR_RESPONSE: dict[str, Any] = {
     "business_impact_score": 0,
     "impact_summary": "Analysis failed"
 }
+
+
+# =============================================================================
+# GEMINI RESPONSE PARSING FIX
+# =============================================================================
+# Gemini 3 "thinking" models return multi-part responses:
+#   - thought_signature: encrypted reasoning traces (for multi-turn context)
+#   - text: actual JSON content
+#
+# The SDK's response.text accessor does two things that break JSON parsing:
+#   1. Returns None when only thought_signature exists (no text parts)
+#      → json.loads(None) crashes: "must be str, bytes or bytearray, not NoneType"
+#
+#   2. Concatenates ALL text parts into one string
+#      → You get: {"json1"}{"json2"} instead of just {"json1"}
+#      → json.loads() unable to process this: "Extra data: line X column Y"
+#
+# Under the hood, the SDK does the following (types.py:6014-6036):
+#   text = ''
+#   for part in self.candidates[0].content.parts:
+#       if isinstance(part.text, str):
+#           text += part.text  # Oops, concatenation
+#   return text if any_text_part_text else None  # Oops, None
+#
+# To resolve, we need to grab the FIRST text part manually, skip thought parts entirely.
+# Works with tool calling too - you can still access part.function_call separately.
+# - GitHub #196: https://github.com/google/generative-ai-python/issues/196
+# - GitHub #515: https://github.com/google-gemini/deprecated-generative-ai-python/issues/515
+# - Thought Signatures: https://ai.google.dev/gemini-api/docs/thought-signatures
+#   What those encrypted blobs actually are
+# =============================================================================
+
+def extract_json_from_gemini_response(response: Any) -> str:
+    """
+    Extract JSON string from Gemini response, handling thought_signature parts.
+    
+    Gemini 3 models return responses with multiple parts including thought_signature
+    (reasoning traces). The SDK's response.text accessor concatenates all text parts,
+    causing "Extra data" JSON parse errors. This function extracts ONLY the first
+    non-thought text part to get clean JSON.
+    
+    Args:
+        response: Gemini API response object with candidates[0].content.parts
+        
+    Returns:
+        str: JSON string from first text part
+        
+    Raises:
+        ValueError: If response has no candidates, no parts, or no text parts
+        
+    Example:
+        >>> response = gemini_client.models.generate_content(...)
+        >>> json_str = extract_json_from_gemini_response(response)
+        >>> analysis = json.loads(json_str)  # Safe - no NoneType or concatenation
+    """
+    if not response.candidates:
+        raise ValueError("Gemini response has no candidates")
+    
+    if not response.candidates[0].content:
+        raise ValueError("Gemini response candidate has no content")
+    
+    if not response.candidates[0].content.parts:
+        raise ValueError("Gemini response content has no parts")
+    
+    # Iterate through parts to find first text part (skip thought parts)
+    for part in response.candidates[0].content.parts:
+        # Skip thought_signature parts (encrypted reasoning state)
+        if getattr(part, 'thought', False):
+            continue
+        
+        # Return first text part only (prevents concatenation)
+        if part.text:
+            return part.text
+    
+    # No text part found (only thought_signature or empty parts)
+    raise ValueError(
+        "No text part found in Gemini response. "
+        "Response may contain only thought_signature parts or be empty."
+    )
 
 
 def analyze_with_openai(
@@ -135,19 +214,42 @@ def analyze_with_gemini(
                 config={
                     "temperature": config['llm']['gemini'].get('temperature', 0.2),
                     "max_output_tokens": config['llm']['gemini'].get('max_output_tokens', 8192),
-                    "response_mime_type": "application/json"
+                    "response_mime_type": "application/json",
+                    "response_schema": GEMINI_RESPONSE_SCHEMA
                 }
             )
 
+            # Use SDK's built-in response.text accessor
+            # This concatenates all text parts automatically
             analysis = json.loads(response.text)
+            
+            # Schema enforcement guarantees dict output, but defensive check for safety
+            if not isinstance(analysis, dict):
+                raise ValueError(f"Schema enforcement failed: got {type(analysis)} instead of dict")
+
             log_llm_cost(model_name, combined_input, response.text)
             return analysis
+            
+            # extract_json_from_gemini_response
+            # This was introduced to fix NoneType/Extra JSON issues with Gemini 3 thinking models
+            # but may drop multiple analyses if Gemini returns [{analysis1}, {analysis2}]
+            # json_text = extract_json_from_gemini_response(response)
+            # analysis = json.loads(json_text)
+            # if not isinstance(analysis, dict):
+            #     raise ValueError(f"Schema enforcement failed: got {type(analysis)} instead of dict")
+            # log_llm_cost(model_name, combined_input, json_text)
+            # return analysis
 
         except json.JSONDecodeError as e:
             last_error = f"JSON parse error: {str(e)}"
             if attempt == max_retries - 1:
                 console.print(f"[red]Error parsing JSON from Gemini: {e}[/red]")
-                console.print(f"[dim]Raw output: {response.text[:200]}...[/dim]")
+                # Extract text safely for error logging
+                try:
+                    debug_text = extract_json_from_gemini_response(response)
+                    console.print(f"[dim]Raw output: {debug_text[:200]}...[/dim]")
+                except Exception:
+                    console.print("[dim]Could not extract text for debugging[/dim]")
                 return {
                     **ERROR_RESPONSE,
                     "error": last_error,

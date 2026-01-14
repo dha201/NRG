@@ -1,4 +1,81 @@
 
+# Gemini API response schema - enforces object output (not array)
+# Using OpenAPI 3.0 schema subset supported by Gemini
+GEMINI_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "bill_version": {"type": "string"},
+        "business_impact_score": {"type": "integer"},
+        "impact_type": {"type": "string"},
+        "impact_summary": {"type": "string"},
+        "legal_code_changes": {
+            "type": "object",
+            "properties": {
+                "sections_amended": {"type": "array", "items": {"type": "string"}},
+                "sections_added": {"type": "array", "items": {"type": "string"}},
+                "sections_deleted": {"type": "array", "items": {"type": "string"}},
+                "chapters_repealed": {"type": "array", "items": {"type": "string"}},
+                "substance_of_changes": {"type": "string"}
+            }
+        },
+        "application_scope": {
+            "type": "object",
+            "properties": {
+                "applies_to": {"type": "array", "items": {"type": "string"}},
+                "exclusions": {"type": "array", "items": {"type": "string"}},
+                "geographic_scope": {"type": "array", "items": {"type": "string"}}
+            }
+        },
+        "effective_dates": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string"},
+                    "applies_to": {"type": "string"}
+                }
+            }
+        },
+        "mandatory_vs_permissive": {
+            "type": "object",
+            "properties": {
+                "mandatory_provisions": {"type": "array", "items": {"type": "string"}},
+                "permissive_provisions": {"type": "array", "items": {"type": "string"}}
+            }
+        },
+        "exceptions_and_exemptions": {
+            "type": "object",
+            "properties": {
+                "exceptions": {"type": "array", "items": {"type": "string"}},
+                "exemptions": {"type": "array", "items": {"type": "string"}}
+            }
+        },
+        "nrg_business_verticals": {"type": "array", "items": {"type": "string"}},
+        "nrg_vertical_impact_details": {"type": "object"},
+        "nrg_relevant_excerpts": {"type": "array", "items": {"type": "string"}},
+        "affected_nrg_assets": {
+            "type": "object",
+            "properties": {
+                "generation_facilities": {"type": "array", "items": {"type": "string"}},
+                "geographic_exposure": {"type": "array", "items": {"type": "string"}},
+                "business_units": {"type": "array", "items": {"type": "string"}}
+            }
+        },
+        "financial_impact": {"type": "string"},
+        "timeline": {"type": "string"},
+        "risk_or_opportunity": {"type": "string"},
+        "recommended_action": {"type": "string"},
+        "internal_stakeholders": {"type": "array", "items": {"type": "string"}}
+    },
+    "required": [
+        "business_impact_score",
+        "impact_type",
+        "impact_summary",
+        "recommended_action"
+    ]
+}
+
+# Human-readable JSON schema for prompts (non-Gemini LLMs)
 ANALYSIS_JSON_SCHEMA = """{
   "bill_version": "as_filed | house_committee | passed_house | senate_committee | passed_senate | conference_committee | enrolled | unknown",
   "business_impact_score": <0-10 integer>,

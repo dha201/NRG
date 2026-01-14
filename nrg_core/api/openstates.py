@@ -7,6 +7,7 @@ import httpx
 from rich.console import Console
 
 from nrg_core.db.cache import compute_bill_hash
+from nrg_core.utils import normalize_version_type
 
 console = Console()
 
@@ -21,15 +22,6 @@ PDF_IMAGE_THRESHOLD: int = 100
 
 
 def extract_pdf_text(pdf_url: str) -> tuple[Optional[str], bool]:
-    """
-    Args:
-        pdf_url: URL of the PDF to extract text from
-
-    Returns:
-        Tuple of (extracted_text, is_image_based) where:
-        - extracted_text is the full text or None if extraction failed
-        - is_image_based is True if PDF appears to be scanned images
-    """
     try:
         import pdfplumber
 
@@ -129,18 +121,6 @@ def fetch_openstates_bills(
     search_query: Optional[str] = None,
     limit: int = 3
 ) -> list[dict[str, any]]:
-    """
-    Fetch state bills from Open States API (Plural Policy).
-    
-    Args:
-        jurisdiction: State code (TX, CA) or US for federal
-        bill_numbers: Specific bill IDs to fetch
-        search_query: Full-text search query
-        limit: Maximum number of bills to return
-        
-    Returns:
-        List of normalized bill dictionaries
-    """
     if not os.getenv("OPENSTATES_API_KEY"):
         console.print("[yellow]⚠ Open States API key not found in environment[/yellow]")
         return []
@@ -357,16 +337,6 @@ def fetch_bill_versions_from_openstates(
     openstates_id: str,
     bill_number: str
 ) -> list[dict[str, any]]:
-    """
-    Fetch all versions of a bill from Open States API.
-    
-    Args:
-        openstates_id: Open States bill ID (ocd-bill/...)
-        bill_number: Bill number for display (e.g., HB 4238)
-        
-    Returns:
-        List of bill version dictionaries with full_text, hash, and metadata
-    """
     if not os.getenv("OPENSTATES_API_KEY"):
         return []
 
@@ -391,7 +361,8 @@ def fetch_bill_versions_from_openstates(
         
         versions: list[dict[str, any]] = []
         for idx, version_data in enumerate(versions_raw, 1):
-            version_type: str = version_data.get("note", "Unknown")
+            raw_version_type: str = version_data.get("note", "Unknown")
+            version_type: str = normalize_version_type(raw_version_type, source="Open States")
             version_date: str = version_data.get("date", "")
             links = version_data.get("links", [])
 

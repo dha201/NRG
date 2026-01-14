@@ -57,7 +57,6 @@ class BillVersion:
     
     @classmethod
     def from_dict(cls, data: dict) -> "BillVersion":
-        """Create BillVersion from dictionary (API response)."""
         raw_type = data.get('version_type', data.get('note', 'Unknown'))
         return cls(
             version_number=data.get('version_number', 0),
@@ -107,7 +106,6 @@ class Bill:
     
     @classmethod
     def from_dict(cls, data: dict) -> "Bill":
-        """Convert version dict -> BillVersion object"""
         versions = [
             BillVersion.from_dict(v) if isinstance(v, dict) else v 
             for v in data.get('versions', [])
@@ -132,7 +130,6 @@ class Bill:
         )
     
     def to_dict(self) -> dict:
-        """Convert to dictionary (for JSON serialization)."""
         return {
             'source': self.source,
             'type': self.bill_type,
@@ -205,7 +202,6 @@ class Analysis:
         )
     
     def to_dict(self) -> dict:
-        """Convert to dictionary."""
         return {
             'business_impact_score': self.business_impact_score,
             'impact_type': self.impact_type,

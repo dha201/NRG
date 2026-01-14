@@ -5,6 +5,7 @@ from typing import Any, Optional
 from rich.console import Console
 
 from nrg_core.db.cache import compute_bill_hash
+from nrg_core.analysis.llm import extract_json_from_gemini_response
 
 console = Console()
 
@@ -12,6 +13,34 @@ console = Console()
 CHANGE_TYPE_TEXT: str = "text_change"
 CHANGE_TYPE_STATUS: str = "status_change"
 CHANGE_TYPE_AMENDMENTS: str = "new_amendments"
+
+# Gemini response schemas for change analysis
+CHANGE_IMPACT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "change_impact_score": {"type": "integer"},
+        "impact_increased": {"type": "boolean"},
+        "change_summary": {"type": "string"},
+        "nrg_impact": {"type": "string"},
+        "recommended_action": {"type": "string"},
+        "key_concerns": {"type": "array", "items": {"type": "string"}}
+    },
+    "required": ["change_impact_score", "change_summary", "recommended_action"]
+}
+
+VERSION_CHANGES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "key_provisions_added": {"type": "array", "items": {"type": "string"}},
+        "key_provisions_removed": {"type": "array", "items": {"type": "string"}},
+        "key_provisions_modified": {"type": "array", "items": {"type": "string"}},
+        "impact_evolution": {"type": "string"},
+        "compliance_changes": {"type": "string"},
+        "strategic_significance": {"type": "string"},
+        "summary": {"type": "string"}
+    },
+    "required": ["key_provisions_added", "key_provisions_removed", "key_provisions_modified", "summary"]
+}
 
 
 def compute_text_diff(old_text: str, new_text: str) -> str:
@@ -171,10 +200,14 @@ Analyze the impact of these changes on NRG Energy. Provide JSON response:
                 config={
                     "temperature": 0.2,
                     "max_output_tokens": 2048,
-                    "response_mime_type": "application/json"
+                    "response_mime_type": "application/json",
+                    "response_schema": CHANGE_IMPACT_SCHEMA
                 }
             )
             return json.loads(response.text)
+            
+            # json_text = extract_json_from_gemini_response(response)
+            # return json.loads(json_text)
         else:
             response = openai_client.responses.create(
                 model="gpt-5",
@@ -191,3 +224,196 @@ Analyze the impact of these changes on NRG Energy. Provide JSON response:
             "change_summary": "Analysis failed",
             "error": str(e)
         }
+
+
+def compare_consecutive_versions(
+    old_version: dict[str, Any],
+    new_version: dict[str, Any]
+) -> dict[str, Any]:
+    """
+    Generate diff between two consecutive bill versions.
+
+    Args:
+        old_version: Previous version dict with full_text, version_type, etc.
+        new_version: Current version dict with full_text, version_type, etc.
+
+    Returns:
+        Dictionary with diff statistics and summary
+    """
+    old_text = old_version.get('full_text', '')
+    new_text = new_version.get('full_text', '')
+
+    if not old_text or not new_text:
+        return {
+            "changed": False,
+            "error": "Missing text for one or both versions"
+        }
+
+    # Compute hash to check if changed
+    old_hash = compute_bill_hash(old_text)
+    new_hash = compute_bill_hash(new_text)
+
+    if old_hash == new_hash:
+        return {
+            "changed": False,
+            "from_version": old_version.get('version_type'),
+            "to_version": new_version.get('version_type')
+        }
+
+    # Generate unified diff
+    diff_summary = compute_text_diff(old_text, new_text)
+
+    # Count changes
+    diff_lines = diff_summary.split('\n')
+    lines_added = sum(1 for line in diff_lines if line.startswith('+') and not line.startswith('+++'))
+    lines_removed = sum(1 for line in diff_lines if line.startswith('-') and not line.startswith('---'))
+
+    # Extract key changes (first 500 characters of diff)
+    key_changes = diff_summary[:500] if len(diff_summary) > 500 else diff_summary
+
+    return {
+        "changed": True,
+        "from_version": old_version.get('version_type'),
+        "to_version": new_version.get('version_type'),
+        "lines_added": lines_added,
+        "lines_removed": lines_removed,
+        "diff_summary": diff_summary,
+        "key_changes_preview": key_changes,
+        "word_count_change": new_version.get('word_count', 0) - old_version.get('word_count', 0)
+    }
+
+
+def analyze_version_changes_with_llm(
+    old_version: dict[str, Any],
+    new_version: dict[str, Any],
+    old_analysis: dict[str, Any],
+    new_analysis: dict[str, Any],
+    bill_info: dict[str, Any],
+    nrg_context: str,
+    config: dict[str, Any],
+    gemini_client: Optional[Any] = None,
+    openai_client: Optional[Any] = None
+) -> dict[str, Any]:
+    """
+    Use LLM to analyze substantive changes between two consecutive bill versions.
+
+    Args:
+        old_version: Previous version dict with full_text, version_type, etc.
+        new_version: Current version dict with full_text, version_type, etc.
+        old_analysis: LLM analysis of old version
+        new_analysis: LLM analysis of new version
+        bill_info: Bill metadata (number, title, etc.)
+        nrg_context: NRG business context
+        config: Configuration dictionary
+        gemini_client: Gemini client instance
+        openai_client: OpenAI client instance
+
+    Returns:
+        Dictionary with semantic change analysis
+    """
+    provider = config['llm']['provider']
+
+    # Get abbreviated versions of each text (first 15K chars to stay within context limits)
+    old_text_sample = old_version.get('full_text', '')[:15000]
+    new_text_sample = new_version.get('full_text', '')[:15000]
+
+    prompt = f"""You are analyzing legislative changes for NRG Energy's Government Affairs team.
+
+**BILL INFORMATION:**
+- Bill Number: {bill_info.get('number', 'Unknown')}
+- Title: {bill_info.get('title', 'Unknown')}
+- Source: {bill_info.get('source', 'Unknown')}
+
+**VERSION TRANSITION:**
+- FROM: {old_version.get('version_type')} ({old_version.get('version_date', 'N/A')}) - Impact Score: {old_analysis.get('business_impact_score', 'N/A')}/10
+- TO: {new_version.get('version_type')} ({new_version.get('version_date', 'N/A')}) - Impact Score: {new_analysis.get('business_impact_score', 'N/A')}/10
+
+**PREVIOUS VERSION TEXT (first 15K chars):**
+{old_text_sample}
+
+**CURRENT VERSION TEXT (first 15K chars):**
+{new_text_sample}
+
+**NRG BUSINESS CONTEXT:**
+{nrg_context[:2000]}
+
+**TASK:**
+Analyze the substantive changes between these two versions from NRG's perspective.
+
+Return ONLY a JSON object with this structure:
+{{
+  "key_provisions_added": ["List of major provisions added"],
+  "key_provisions_removed": ["List of major provisions removed"],
+  "key_provisions_modified": ["List of major provisions modified"],
+  "impact_evolution": "Explanation of how NRG impact changed",
+  "compliance_changes": "Summary of new/removed compliance requirements",
+  "strategic_significance": "What these changes mean for NRG strategy",
+  "summary": "2-3 sentence executive summary of changes"
+}}"""
+
+    max_retries = 2
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            if provider == 'gemini':
+                response = gemini_client.models.generate_content(
+                    model=config['llm']['gemini']['model'],
+                    contents=prompt,
+                    config={
+                        "temperature": 0.2,
+                        "max_output_tokens": 4096,
+                        "response_mime_type": "application/json"
+                    }
+                )
+                result = json.loads(response.text)
+                
+                # json_text = extract_json_from_gemini_response(response)
+                # result = json.loads(json_text)
+            else:
+                response = openai_client.responses.create(
+                    model="gpt-5",
+                    input=prompt,
+                    reasoning={"effort": "low"},
+                    text={"verbosity": "medium"}
+                )
+                result = json.loads(response.output_text)
+
+            return {
+                "key_provisions_added": result.get("key_provisions_added", []),
+                "key_provisions_removed": result.get("key_provisions_removed", []),
+                "key_provisions_modified": result.get("key_provisions_modified", []),
+                "impact_evolution": result.get("impact_evolution", "No analysis available"),
+                "compliance_changes": result.get("compliance_changes", "No analysis available"),
+                "strategic_significance": result.get("strategic_significance", "No analysis available"),
+                "summary": result.get("summary", result.get("impact_summary", "No summary available"))
+            }
+        
+        except (json.JSONDecodeError, ValueError) as e:
+            last_error = str(e)
+            if attempt < max_retries - 1:
+                console.print(f"[yellow]  ⚠ JSON parse error (attempt {attempt + 1}/{max_retries}), retrying...[/yellow]")
+                continue
+            else:
+                console.print(f"[red]Error analyzing version changes with LLM: {e}[/red]")
+                return {
+                    "summary": f"Error during analysis: {str(e)}",
+                    "key_provisions_added": [],
+                    "key_provisions_removed": [],
+                    "key_provisions_modified": [],
+                    "impact_evolution": "Error",
+                    "compliance_changes": "Error",
+                    "strategic_significance": "Error"
+                }
+        
+        except Exception as e:
+            console.print(f"[red]Error analyzing version changes with LLM: {e}[/red]")
+            return {
+                "summary": f"Error during analysis: {str(e)}",
+                "key_provisions_added": [],
+                "key_provisions_removed": [],
+                "key_provisions_modified": [],
+                "impact_evolution": "Error",
+                "compliance_changes": "Error",
+                "strategic_significance": "Error"
+            }

@@ -26,3 +26,8 @@ nrg_analysis_*/
 # VS Code
 .vscode/
 *.code-workspace
+*.vscode-settings
+*.code-profile
+
+# Azure Functions local settings
+local.settings.json
