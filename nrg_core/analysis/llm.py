@@ -6,8 +6,11 @@ from rich.console import Console
 
 from nrg_core.analysis.prompts import build_analysis_prompt, GEMINI_RESPONSE_SCHEMA
 from nrg_core.utils import log_llm_cost
+from nrg_core.config import load_config
 
 console = Console()
+_config = load_config()
+_debug_llm_responses = _config.get('debug', {}).get('llm_responses', False)
 
 # Error response structure
 ERROR_RESPONSE: dict[str, Any] = {
@@ -69,27 +72,67 @@ def extract_json_from_gemini_response(response: Any) -> str:
         >>> json_str = extract_json_from_gemini_response(response)
         >>> analysis = json.loads(json_str)  # Safe - no NoneType or concatenation
     """
+    # Debug: response structure
+    if _debug_llm_responses:
+        console.print(f"[dim]DEBUG extract_json: response type = {type(response)}[/dim]")
+        console.print(f"[dim]DEBUG extract_json: response.text = {response.text[:200] if response.text else None}...[/dim]")
+        console.print(f"[dim]DEBUG extract_json: has candidates = {hasattr(response, 'candidates')}[/dim]")
+    
     if not response.candidates:
+        if _debug_llm_responses:
+            console.print(f"[red]DEBUG extract_json: response.candidates is empty or None[/red]")
         raise ValueError("Gemini response has no candidates")
     
+    if _debug_llm_responses:
+        console.print(f"[dim]DEBUG extract_json: candidates count = {len(response.candidates)}[/dim]")
+        console.print(f"[dim]DEBUG extract_json: candidate[0] type = {type(response.candidates[0])}[/dim]")
+        console.print(f"[dim]DEBUG extract_json: candidate[0].content = {response.candidates[0].content}[/dim]")
+    
     if not response.candidates[0].content:
+        if _debug_llm_responses:
+            console.print(f"[red]DEBUG extract_json: candidate[0].content is None[/red]")
         raise ValueError("Gemini response candidate has no content")
     
+    if _debug_llm_responses:
+        console.print(f"[dim]DEBUG extract_json: content type = {type(response.candidates[0].content)}[/dim]")
+        console.print(f"[dim]DEBUG extract_json: content.parts = {response.candidates[0].content.parts}[/dim]")
+    
     if not response.candidates[0].content.parts:
+        if _debug_llm_responses:
+            console.print(f"[red]DEBUG extract_json: content.parts is empty or None[/red]")
+            console.print(f"[red]DEBUG extract_json: Full response dump = {response}[/red]")
         raise ValueError("Gemini response content has no parts")
     
     # Iterate through parts to find first text part (skip thought parts)
-    for part in response.candidates[0].content.parts:
+    if _debug_llm_responses:
+        console.print(f"[dim]DEBUG extract_json: Iterating through {len(response.candidates[0].content.parts)} parts[/dim]")
+    
+    for i, part in enumerate(response.candidates[0].content.parts):
+        if _debug_llm_responses:
+            console.print(f"[dim]DEBUG extract_json: Part {i} - type={type(part)}, thought={getattr(part, 'thought', False)}, text_len={len(part.text) if part.text else 0}[/dim]")
+        
         # Skip thought_signature parts (encrypted reasoning state)
-        if getattr(part, 'thought', False):
+        # Note: thought attribute can be True or None (not always False)
+        thought_val = getattr(part, 'thought', False)
+        if thought_val is True or (thought_val is not False and hasattr(part, 'thought_signature')):
+            if _debug_llm_responses:
+                console.print(f"[dim]DEBUG extract_json: Part {i} - SKIPPED (thought={thought_val} or has thought_signature)[/dim]")
             continue
         
         # Return first non-empty text part only (prevents concatenation)
         # Skip None, empty strings, and whitespace-only parts
         if part.text and part.text.strip():
+            if _debug_llm_responses:
+                console.print(f"[dim]DEBUG extract_json: Part {i} - RETURNING (text found, len={len(part.text)})[/dim]")
+                console.print(f"[dim]DEBUG extract_json: First 200 chars = {part.text[:200]}...[/dim]")
             return part.text
+        else:
+            if _debug_llm_responses:
+                console.print(f"[dim]DEBUG extract_json: Part {i} - SKIPPED (empty or whitespace)[/dim]")
     
     # No text part found (only thought_signature or empty parts)
+    if _debug_llm_responses:
+        console.print(f"[red]DEBUG extract_json: NO TEXT PARTS FOUND after checking all {len(response.candidates[0].content.parts)} parts[/red]")
     raise ValueError(
         "No text part found in Gemini response. "
         "Response may contain only thought_signature parts or be empty."
@@ -248,11 +291,12 @@ def analyze_with_gemini(
             if attempt == max_retries - 1:
                 console.print(f"[red]Error parsing JSON from Gemini: {e}[/red]")
                 # Extract text safely for error logging
-                try:
-                    debug_text = extract_json_from_gemini_response(response)
-                    console.print(f"[dim]Raw output: {debug_text[:200]}...[/dim]")
-                except Exception:
-                    console.print("[dim]Could not extract text for debugging[/dim]")
+                if _debug_llm_responses:
+                    try:
+                        debug_text = extract_json_from_gemini_response(response)
+                        console.print(f"[dim]Raw output: {debug_text[:200]}...[/dim]")
+                    except Exception:
+                        console.print("[dim]Could not extract text for debugging[/dim]")
                 return {
                     **ERROR_RESPONSE,
                     "error": last_error,

@@ -7,8 +7,11 @@ from rich.console import Console
 
 from nrg_core.db.cache import compute_bill_hash
 from nrg_core.analysis.llm import extract_json_from_gemini_response
+from nrg_core.config import load_config
 
 console = Console()
+_config = load_config()
+_debug_llm_responses = _config.get('debug', {}).get('llm_responses', False)
 
 # Change type constants
 CHANGE_TYPE_TEXT: str = "text_change"
@@ -205,12 +208,22 @@ Analyze the impact of these changes on NRG Energy. Provide JSON response:
                     contents=prompt,
                     config={
                         "temperature": 0.2,
-                        "max_output_tokens": 2048,
+                        "max_output_tokens": 8192,  # Increased for thinking model token budget
                         "response_mime_type": "application/json",
                         "response_schema": CHANGE_IMPACT_SCHEMA
                     }
                 )
-                return json.loads(response.text)
+                
+                json_text = response.text
+                
+                if json_text is None:
+                    json_text = extract_json_from_gemini_response(response)
+                
+                try:
+                    return json.loads(json_text)
+                except (json.JSONDecodeError, TypeError):
+                    json_text = extract_json_from_gemini_response(response)
+                    return json.loads(json_text)
             else:
                 response = openai_client.responses.create(
                     model="gpt-5",
@@ -380,19 +393,50 @@ Return ONLY a JSON object with this structure:
                     contents=prompt,
                     config={
                         "temperature": 0.2,
-                        "max_output_tokens": 4096,
+                        "max_output_tokens": 8192,  # Increased: thinking models use ~4K tokens for thoughts
                         "response_mime_type": "application/json",
                         "response_schema": VERSION_CHANGES_SCHEMA
                     }
                 )
                 
-                if response.text is None:
-                    raise ValueError("Gemini response.text is None - thought-only response despite schema")
+                # Debug: Log response state before extraction
+                if _debug_llm_responses:
+                    console.print(f"[dim]DEBUG version_changes: Got response, type={type(response)}[/dim]")
+                    console.print(f"[dim]DEBUG version_changes: response.text is None? {response.text is None}[/dim]")
+                    if response.text:
+                        console.print(f"[dim]DEBUG version_changes: response.text length={len(response.text)}, first 200 chars={response.text[:200]}[/dim]")
+                    console.print(f"[dim]DEBUG version_changes: has candidates? {hasattr(response, 'candidates') and response.candidates}[/dim]")
+                    if hasattr(response, 'candidates') and response.candidates:
+                        console.print(f"[dim]DEBUG version_changes: candidates[0].content? {response.candidates[0].content}[/dim]")
+                        if response.candidates[0].content:
+                            console.print(f"[dim]DEBUG version_changes: content.parts? {response.candidates[0].content.parts}[/dim]")
+                            if response.candidates[0].content.parts:
+                                console.print(f"[dim]DEBUG version_changes: parts count={len(response.candidates[0].content.parts)}[/dim]")
                 
-                result = json.loads(response.text)
+                # Try SDK's response.text first (preserves all content)
+                # Fall back to extract_json_from_gemini_response for edge cases:
+                #   - response.text is None (thought-only responses)
+                #   - response.text has concatenated JSON (multi-part responses with malformed boundaries)
+                json_text = response.text
                 
-                # json_text = extract_json_from_gemini_response(response)
-                # result = json.loads(json_text)
+                if json_text is None:
+                    if _debug_llm_responses:
+                        console.print(f"[yellow]DEBUG version_changes: response.text is None, calling extract_json_from_gemini_response[/yellow]")
+                    # Gemini 3 thinking models may return None for thought-only responses
+                    json_text = extract_json_from_gemini_response(response)
+                
+                try:
+                    result = json.loads(json_text)
+                    if _debug_llm_responses:
+                        console.print(f"[dim]DEBUG version_changes: Successfully parsed JSON from response.text[/dim]")
+                except (json.JSONDecodeError, TypeError) as e:
+                    if _debug_llm_responses:
+                        console.print(f"[yellow]DEBUG version_changes: JSON parse failed ({e}), calling extract_json_from_gemini_response[/yellow]")
+                    # SDK concatenation bug: {"json1"}{"json2"} or unterminated strings at boundaries
+                    json_text = extract_json_from_gemini_response(response)
+                    result = json.loads(json_text)
+                    if _debug_llm_responses:
+                        console.print(f"[dim]DEBUG version_changes: Successfully parsed JSON from extracted part[/dim]")
             else:
                 response = openai_client.responses.create(
                     model="gpt-5",

@@ -379,9 +379,20 @@ def run_analysis() -> None:
     db_conn = None
     if change_tracking_enabled:
         console.print("[cyan]Initializing change tracking database...[/cyan]")
-        temp_dir = os.environ.get('TEMP', tempfile.gettempdir())
         db_filename = config.get('change_tracking', {}).get('database', 'bill_cache.db')
-        db_path = os.path.join(temp_dir, db_filename)
+        
+        # Auto-detect environment: use temp dir in Azure, project root locally
+        is_azure = os.environ.get('WEBSITE_INSTANCE_ID') or os.environ.get('AZURE_FUNCTIONS_ENVIRONMENT')
+        if is_azure:
+            # Azure Functions: use temp directory (ephemeral storage)
+            temp_dir = os.environ.get('TEMP', tempfile.gettempdir())
+            db_path = os.path.join(temp_dir, db_filename)
+            console.print(f"[dim]  Running in Azure Functions (temp storage)[/dim]")
+        else:
+            # Local development: use project root (visible and persistent)
+            db_path = os.path.abspath(db_filename)
+            console.print(f"[dim]  Running locally (project root)[/dim]")
+        
         db_conn = init_database(db_path)
         console.print(f"[green]✓ Database ready: {db_path}[/green]")
 

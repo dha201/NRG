@@ -1,117 +1,87 @@
-# LLM Quality Testing (DeepEval)
+# LLM Quality Assurance: G-Eval Framework
 
-**The Problem:** Manual review doesn't scale. We can't read every analysis.
-**The Solution:** Use a second LLM to grade the first one against expert human standards.
+## Overview
 
----
+As the volume of legislative analysis scales, manual review of every LLM output becomes infeasible. To ensure consistent quality without human bottlenecks, we have implemented an automated **LLM-as-Judge** evaluation pipeline using the **G-Eval framework**.
 
-## How It Works
+This system employs a secondary "Judge" LLM to audit the outputs of our primary "Analyst" LLM, grading them against expert human baselines ("Golden Datasets"). This allows for continuous regression testing, detection of hallucinations, and calibration of model performance.
 
-Simple pipeline:
-`Bill Text` -> `Analysis LLM` -> `JSON Output` -> `Judge LLM` -> `Quality Score`
+## Methodology
 
-1.  **Analysis LLM** (Gemini 3 Pro) reads the bill and generates the analysis.
-2.  **Judge LLM** (Gemini 3 Flash) compares that analysis to expert "ground truth."
-    *   Did the score match what a human would say?
-    *   Are the business verticals correct?
-3.  **Judge** returns a pass/fail verdict and explains its reasoning.
+We utilize the **G-Eval** framework (based on *G-Eval: NLG Evaluation using GPT-4 with Better Human Alignment*), which leverages Chain-of-Thought (CoT) reasoning to perform reference-based evaluation.
 
----
+### The Pipeline
 
-## Why It Matters
+The evaluation pipeline follows a strict flow:
 
-### For Product Managers
+1.  **Input:** Raw legislative text.
+2.  **Analysis (Candidate):** The production model (`gemini-3-pro-preview`) generates the legislative analysis JSON.
+3.  **Evaluation (Judge):** The judge model (`gemini-3-flash-preview`) compares the Candidate output against an **Expert Reference** (ground truth provided by legal/policy teams).
+4.  **Scoring:** The judge outputs a score (0-1), a pass/fail verdict, and a reasoning trace explaining the decision.
 
-**Quality at Scale**
-*   Catches score inflation (claiming 8/10 impact when it's actually 2/10).
-*   Stops hallucinations (flagging "EVs" for a debt collection bill).
-*   Prevents false alarms.
+### Architecture
 
-**Cost & Confidence**
-*   Cheaper than human review ($2.40/month for 10% sampling).
-*   Deploys with confidence—run tests before shipping.
-*   Catches regression bugs instantly.
+| Component | Model | Configuration | Role |
+|-----------|-------|---------------|------|
+| **Analyst** | Gemini 3 Pro | Temp 0.2 | Generates business impact scores and vertical classifications. |
+| **Judge** | Gemini 3 Flash | Temp 0.1 | Evaluates accuracy of the Analyst's output. |
 
-### For Developers
+## Evaluation Metrics
 
-**Better Testing**
-*   Change a prompt? Run the judge. Know immediately if you broke something.
-*   Upgrade models safely.
-*   Golden dataset prevents "whack-a-mole" bug fixing.
+We employ split-metric evaluation to diagnose specific failure modes. A single monolithic score is often too opaque for debugging.
 
-**Faster Debugging**
-*   Judge explains *why* it failed.
-*   "Score failed because analysis missed the pay-at-pump exemption."
-*   Root cause analysis takes minutes, not hours.
+### 1. Score Accuracy
+*   **Objective:** Validate that the `business_impact_score` aligns with expert judgment.
+*   **Logic:** Checks if the LLM score is within **±1** of the expert reference score.
+*   **Threshold:** `0.5` (Pass/Fail).
+*   **Failure Mode:** Detects score inflation (e.g., scoring a procedural bill as 8/10) or deflation.
 
----
+### 2. Vertical Accuracy
+*   **Objective:** Ensure business verticals (e.g., "Retail", "Generation") are correctly identified.
+*   **Logic:** Compares the list of flagged verticals against the ground truth.
+*   **Threshold:** `0.3` (Pass/Fail).
+*   **Failure Mode:** Detects hallucinations (e.g., flagging "EVs" for a debt collection bill) or missed exposure.
 
-## Current Status
+## The Golden Dataset
 
-### Working
-*   **Framework:** DeepEval G-Eval (solid, research-backed).
-*   **Pipeline:** Tests real production code, not mocks.
-*   **Detection:** successfully catches bad scores and hallucinated verticals.
-*   **Output:** Clear, color-coded console logs.
+The core of this framework is the **Golden Dataset**—a curated set of bills with pre-validated expert analyses. The Judge does not rely on its own intuition alone; it relies on its ability to measure distance from this expert ground truth.
 
-### Gaps
-*   **Data Starved:** Only one "golden" bill (HB 4238). Need 50+ to be robust.
-*   **Manual Tuning:** Thresholds set by trial/error, not calibrated data.
-*   **Offline:** Runs in tests, not yet monitoring live production traffic.
+*   **Current State:** Initial calibration using HB 4238 (Identity Theft/Debt Collection).
+*   **Requirement:** A robust dataset requires **50+ examples** covering:
+    *   **Impact Variance:** Low (2/10), Medium (5/10), and High (8/10) impact bills.
+    *   **Domain Variance:** Regulatory, Tax, Operational, and Market bills.
 
----
+## Usage Guide
 
-## The Roadmap
+### Running Evaluations
 
-### 1. Expand Golden Dataset
-We need 50+ bills validated by the legal team.
-*   **Mix of impact:** Low (2/10), Medium (5/10), High (8/10).
-*   **Mix of types:** Regulatory, tax, operational.
-*   **Mix of verticals:** Generation, Retail, EVs.
+Tests are implemented via `pytest` and `DeepEval`.
 
-**How:** Add bill text + expert judgment to `tests/test_llm_quality/test_llm_as_judge.py`.
-
-### 2. Calibrate
-Run the judge on those 50 bills.
-*   Compare judge scores to human scores.
-*   Tune thresholds until they agree >70% of the time.
-
-### 3. Production Sampling
-Add to `orchestrator.py`.
-*   Sample 10% of daily analyses.
-*   Log scores.
-*   Alert if quality dips.
-
----
-
-## Running Tests
-
-**Quick Check (Full Output):**
+**Quick Test (Console Output):**
 ```bash
 pytest tests/test_llm_quality/test_llm_as_judge.py -v -s
 ```
-*Expect: Green panel with analysis, followed by judge reasoning.*
+*The `-s` flag is required to view the rich console output containing the Judge's reasoning.*
 
-**When to Run:**
-*   **Pre-deploy:** Prompt or model changes.
-*   **Weekly:** Catch drift.
-*   **Diagnostics:** When scores look weird.
+### Integration Strategy
 
----
+1.  **Regression Testing:** Run evaluations before any prompt modification or model version upgrade.
+2.  **Calibration:** When adding new bills to the Golden Dataset, run the judge to ensure it agrees with human experts. If it disagrees, tune the evaluation prompts or thresholds.
+3.  **Production Monitoring (Roadmap):** Sample 10% of live traffic for asynchronous evaluation to track quality drift over time.
 
-## Technical Specs
+## Roadmap
 
-**Analysis:** Gemini 3 Pro (Smart, Temp 0.2)
-**Judge:** Gemini 3 Flash (Fast, Temp 0.1)
+1.  **Dataset Expansion:** Scale the Golden Dataset from 1 to 50+ validated bills.
+2.  **Threshold Calibration:** Tune metric thresholds to achieve >70% correlation with human reviewers across the full dataset.
+3.  **Production Sampling:** Integrate sampling logic into the `orchestrator.py` pipeline for live quality alerts.
 
-**Metrics:**
-*   **Score Accuracy:** Matches expert score within ±1? (Threshold: 0.5)
-*   **Vertical Accuracy:** Selected the right business units? (Threshold: 0.3)
-*   *Note: Split metrics let us debug exactly what went wrong.*
+## FAQ
 
-**Cost:**
-*   ~$0.008 per bill.
-*   10% daily sampling = ~$2.40/month.
-*   Negligible.
+**Why use a Judge LLM instead of rules?**
+Legislative analysis is subjective and semantic. Rule-based systems cannot evaluate if a "summary is accurate" or if a "score is reasonable." LLMs with CoT reasoning can.
 
----
+**Can the Judge be wrong?**
+Yes. However, the system is designed for **calibration**. If the Judge consistently disagrees with human experts on the Golden Dataset, we refine the Judge's prompt or the ground truth until alignment is achieved.
+
+**Why Gemini Flash for the Judge?**
+Evaluation is a classification and reasoning task that requires less "creative" capacity than generation. Gemini Flash provides the necessary reasoning capabilities at significantly lower latency and cost.

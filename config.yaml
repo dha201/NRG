@@ -11,6 +11,7 @@ debug:
   api_order: true          # Show API version order from Open States/Congress
   analysis_order: true     # Show version_analyses order before selection
   llm_calls: false         # Show LLM request/response details
+  llm_responses: false     # Show detailed LLM response parsing (extract_json, version_changes)
   change_detection: false  # Show hash comparisons and change detection logic
 
 # =============================================================================
