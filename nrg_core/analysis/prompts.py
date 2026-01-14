@@ -51,7 +51,16 @@ GEMINI_RESPONSE_SCHEMA = {
             }
         },
         "nrg_business_verticals": {"type": "array", "items": {"type": "string"}},
-        "nrg_vertical_impact_details": {"type": "object"},
+        "nrg_vertical_impact_details": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "vertical": {"type": "string"},
+                    "impact": {"type": "string"}
+                }
+            }
+        },
         "nrg_relevant_excerpts": {"type": "array", "items": {"type": "string"}},
         "affected_nrg_assets": {
             "type": "object",
@@ -115,10 +124,12 @@ ANALYSIS_JSON_SCHEMA = """{
 
   "nrg_business_verticals": ["<select from: Cyber and Grid Security, Data Privacy/Public Information Act, Disaster/Business Continuity, Electric Vehicles, Environmental/Water/Sustainability, Natural Gas, General Business, General Government, Renewables/Distributed Generation/Demand Response, Retail Commodity, Retail Non-commodity, Services, Tax, Transmission-Distribution, Wholesale Market Reforms, Artificial Intelligence, Economic Development/Workforce Development, Electric Generation, Public Utility Commission of Texas>"],
 
-  "nrg_vertical_impact_details": {
-    "<vertical_name>": "<specific impact on this vertical>",
-    ...
-  },
+  "nrg_vertical_impact_details": [
+    {
+      "vertical": "<vertical_name>",
+      "impact": "<specific impact on this vertical>"
+    }
+  ],
 
   "nrg_relevant_excerpts": ["<Section X: Direct quote of NRG-relevant provision>", ...],
 

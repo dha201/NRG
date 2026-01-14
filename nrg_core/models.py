@@ -166,7 +166,7 @@ class Analysis:
     mandatory_vs_permissive: Optional[dict] = None
     exceptions_and_exemptions: Optional[dict] = None
     nrg_business_verticals: list = field(default_factory=list)
-    nrg_vertical_impact_details: Optional[dict] = None
+    nrg_vertical_impact_details: Optional[list] = None
     nrg_relevant_excerpts: list = field(default_factory=list)
     affected_nrg_assets: Optional[dict] = None
     financial_impact: Optional[str] = None

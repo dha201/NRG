@@ -84,8 +84,9 @@ def extract_json_from_gemini_response(response: Any) -> str:
         if getattr(part, 'thought', False):
             continue
         
-        # Return first text part only (prevents concatenation)
-        if part.text:
+        # Return first non-empty text part only (prevents concatenation)
+        # Skip None, empty strings, and whitespace-only parts
+        if part.text and part.text.strip():
             return part.text
     
     # No text part found (only thought_signature or empty parts)
@@ -219,26 +220,28 @@ def analyze_with_gemini(
                 }
             )
 
-            # Use SDK's built-in response.text accessor
-            # This concatenates all text parts automatically
-            analysis = json.loads(response.text)
+            # Try SDK's response.text first (preserves all content)
+            # Fall back to extract_json_from_gemini_response for edge cases:
+            #   - response.text is None (thought-only responses)
+            #   - response.text has concatenated JSON (multi-part responses)
+            json_text = response.text
             
-            # Schema enforcement guarantees dict output, but defensive check for safety
+            if json_text is None:
+                # Gemini 3 thinking models may return None for thought-only responses
+                json_text = extract_json_from_gemini_response(response)
+            
+            try:
+                analysis = json.loads(json_text)
+            except (json.JSONDecodeError, TypeError):
+                # SDK concatenation bug: {"json1"}{"json2"} - try first part only
+                json_text = extract_json_from_gemini_response(response)
+                analysis = json.loads(json_text)
+            
             if not isinstance(analysis, dict):
                 raise ValueError(f"Schema enforcement failed: got {type(analysis)} instead of dict")
 
-            log_llm_cost(model_name, combined_input, response.text)
+            log_llm_cost(model_name, combined_input, json_text)
             return analysis
-            
-            # extract_json_from_gemini_response
-            # This was introduced to fix NoneType/Extra JSON issues with Gemini 3 thinking models
-            # but may drop multiple analyses if Gemini returns [{analysis1}, {analysis2}]
-            # json_text = extract_json_from_gemini_response(response)
-            # analysis = json.loads(json_text)
-            # if not isinstance(analysis, dict):
-            #     raise ValueError(f"Schema enforcement failed: got {type(analysis)} instead of dict")
-            # log_llm_cost(model_name, combined_input, json_text)
-            # return analysis
 
         except json.JSONDecodeError as e:
             last_error = f"JSON parse error: {str(e)}"

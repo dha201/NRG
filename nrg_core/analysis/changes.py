@@ -1,5 +1,6 @@
 import json
 import difflib
+import time
 from typing import Any, Optional
 
 from rich.console import Console
@@ -192,38 +193,55 @@ Analyze the impact of these changes on NRG Energy. Provide JSON response:
   "key_concerns": ["<list any new concerns from changes>"]
 }}"""
 
-    try:
-        if config['llm']['provider'] == 'gemini':
-            response = gemini_client.models.generate_content(
-                model=config['llm']['gemini']['model'],
-                contents=prompt,
-                config={
-                    "temperature": 0.2,
-                    "max_output_tokens": 2048,
-                    "response_mime_type": "application/json",
-                    "response_schema": CHANGE_IMPACT_SCHEMA
-                }
-            )
-            return json.loads(response.text)
-            
-            # json_text = extract_json_from_gemini_response(response)
-            # return json.loads(json_text)
-        else:
-            response = openai_client.responses.create(
-                model="gpt-5",
-                input=prompt,
-                reasoning={"effort": "low"},
-                text={"verbosity": "medium"}
-            )
-            return json.loads(response.output_text)
+    max_retries = 3
+    base_delay = 1.0
+    last_error = None
 
-    except Exception as e:
-        console.print(f"[red]Error analyzing changes: {e}[/red]")
-        return {
-            "change_impact_score": 0,
-            "change_summary": "Analysis failed",
-            "error": str(e)
-        }
+    for attempt in range(max_retries):
+        try:
+            if config['llm']['provider'] == 'gemini':
+                response = gemini_client.models.generate_content(
+                    model=config['llm']['gemini']['model'],
+                    contents=prompt,
+                    config={
+                        "temperature": 0.2,
+                        "max_output_tokens": 2048,
+                        "response_mime_type": "application/json",
+                        "response_schema": CHANGE_IMPACT_SCHEMA
+                    }
+                )
+                return json.loads(response.text)
+            else:
+                response = openai_client.responses.create(
+                    model="gpt-5",
+                    input=prompt,
+                    reasoning={"effort": "low"},
+                    text={"verbosity": "medium"}
+                )
+                return json.loads(response.output_text)
+
+        except Exception as e:
+            last_error = str(e)
+            if attempt == max_retries - 1:
+                console.print(f"[red]Error analyzing changes after {max_retries} attempts: {e}[/red]")
+                return {
+                    "change_impact_score": 0,
+                    "change_summary": "Analysis failed",
+                    "error": last_error
+                }
+            
+            delay = base_delay * (2 ** attempt)
+            console.print(
+                f"[yellow]Change analysis failed ({last_error}), retrying in {delay}s... "
+                f"(attempt {attempt + 1}/{max_retries})[/yellow]"
+            )
+            time.sleep(delay)
+    
+    return {
+        "change_impact_score": 0,
+        "change_summary": "Analysis failed",
+        "error": str(last_error)
+    }
 
 
 def compare_consecutive_versions(
@@ -363,9 +381,14 @@ Return ONLY a JSON object with this structure:
                     config={
                         "temperature": 0.2,
                         "max_output_tokens": 4096,
-                        "response_mime_type": "application/json"
+                        "response_mime_type": "application/json",
+                        "response_schema": VERSION_CHANGES_SCHEMA
                     }
                 )
+                
+                if response.text is None:
+                    raise ValueError("Gemini response.text is None - thought-only response despite schema")
+                
                 result = json.loads(response.text)
                 
                 # json_text = extract_json_from_gemini_response(response)
@@ -389,10 +412,12 @@ Return ONLY a JSON object with this structure:
                 "summary": result.get("summary", result.get("impact_summary", "No summary available"))
             }
         
-        except (json.JSONDecodeError, ValueError) as e:
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
             last_error = str(e)
             if attempt < max_retries - 1:
-                console.print(f"[yellow]  ⚠ JSON parse error (attempt {attempt + 1}/{max_retries}), retrying...[/yellow]")
+                delay = 1.0 * (2 ** attempt)
+                console.print(f"[yellow]  ⚠ JSON parse error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...[/yellow]")
+                time.sleep(delay)
                 continue
             else:
                 console.print(f"[red]Error analyzing version changes with LLM: {e}[/red]")
