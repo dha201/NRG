@@ -32,44 +32,31 @@ FINDING_RESPONSE_SCHEMA = {
 
 
 class LLMClient(ABC):
-    """Base for bill analysis clients with structured output"""
 
     @abstractmethod
     async def analyze_bill(self, bill_text: str, prompt: str, nrg_context: str) -> ModelResponse:
-        """
-        Analyze bill with NRG business context.
-
-        nrg_context focuses model on NRG-relevant findings (e.g., energy generation,
-        tax implications) vs generic bill analysis. Prevents wasted tokens on irrelevant sections.
-        """
         pass
 
 
 class GeminiClient(LLMClient):
-    """
-    Gemini 3 Pro with structured output via response_schema.
-
-    Why Gemini 3 Pro:
-    - Excellent at legislative text (trained on legal/gov docs)
-    - response_schema enforcement prevents JSON parse errors
-    - Thinking mode gives better reasoning for complex bills
-    - Cost-effective for high volume ($0.05/1M tokens)
-
-    Why 2x Gemini instances:
-    - Diversity in reasoning paths (different random seeds)
-    - Catches Gemini-specific blind spots (threshold misreads)
-    - Still cheaper than 3 different model providers
-    """
-
+    
     def __init__(self, api_key: str, model_id: str = "gemini-3-pro", instance_name: str = "A"):
         self.client = genai.Client(api_key=api_key)
         self.model_id = model_id
         self.model_name = f"Gemini-3-Pro-{instance_name}"
 
     async def analyze_bill(self, bill_text: str, prompt: str, nrg_context: str) -> ModelResponse:
+        """
+        Args:
+            bill_text: Full text of the bill to analyze
+            prompt: Analysis instructions with JSON schema definition
+                   (from ConsensusPrompts.get_consensus_analysis_prompt() )
+                   Should include: task description, output format, focus areas, examples
+            nrg_context: NRG business context to filter for relevant findings
+        """
         start_time = time.time()
         try:
-            # Embed NRG context so model filters for business-relevant findings
+            # Build complete prompt: instructions + context + bill text
             full_prompt = f"""{prompt}
 
 **NRG Business Context:**
@@ -79,12 +66,11 @@ class GeminiClient(LLMClient):
 {bill_text}"""
 
             # Structured output prevents "thinking" text contaminating JSON
-            # response_mime_type + response_schema = guaranteed valid JSON
             response = self.client.models.generate_content(
                 model=self.model_id,
                 contents=full_prompt,
                 config={
-                    "temperature": 0.2,  # Low temp for consistency across instances
+                    "temperature": 0.2,
                     "max_output_tokens": 8192,
                     "response_mime_type": "application/json",
                     "response_schema": FINDING_RESPONSE_SCHEMA
@@ -120,7 +106,7 @@ class GeminiClient(LLMClient):
             )
 
     def _extract_first_text_part(self, response):
-        """Extract first non-thought text part (handles Gemini 3 thinking mode)"""
+        """ First non-thought text part, second part is the encrypted thinking part"""
         for part in response.candidates[0].content.parts:
             if getattr(part, 'thought', False):
                 continue  # Skip encrypted reasoning traces
@@ -131,13 +117,9 @@ class GeminiClient(LLMClient):
 
 class OpenAIClient(LLMClient):
     """
-    GPT-5 with structured output via response_format.
-
-    Why GPT-5:
-    - Strong reasoning for causal chains (amendment → impact)
-    - Different architecture provides diversity vs Gemini
-    - response_format ensures valid JSON without schema
-    - Excellent at quote extraction (verbatim text matching)
+    Note: GPT-5 doesn't support schema-based structured output like Gemini's response_schema.
+    We use response_format={"type": "json_object"} to ensure valid JSON, but the schema
+    is enforced via prompt instructions rather than API parameters.
     """
 
     def __init__(self, api_key: str):
@@ -145,6 +127,16 @@ class OpenAIClient(LLMClient):
         self.model_name = "GPT-5"
 
     async def analyze_bill(self, bill_text: str, prompt: str, nrg_context: str) -> ModelResponse:
+        """
+        Analyze bill text and extract findings.
+
+        Args:
+            bill_text: Full text of the bill to analyze
+            prompt: Analysis instructions with JSON schema definition
+                   (from ConsensusPrompts.get_consensus_analysis_prompt()
+                   Should include: task description, output format, focus areas, examples
+            nrg_context: NRG business context to filter for relevant findings
+        """
         start_time = time.time()
         try:
             full_prompt = f"""{prompt}
@@ -155,16 +147,16 @@ class OpenAIClient(LLMClient):
 **Bill Text:**
 {bill_text}"""
 
-            # For now, use text mode without structured output
-            # (GPT-5's response_format not available in all API versions yet)
+            # Use JSON mode to ensure valid JSON output
+            # Schema adherence comes from prompt instructions (GPT-5 follows well per POC tests)
             response = await self.client.chat.completions.create(
                 model="gpt-5",
                 messages=[
-                    {"role": "system", "content": "You are a legislative analyst specializing in business impact assessment. Return valid JSON only."},
                     {"role": "user", "content": full_prompt}
                 ],
                 temperature=0.2,
-                max_tokens=8192
+                max_tokens=8192,
+                response_format={"type": "json_object"}  # Ensures valid JSON, not schema
             )
 
             # Extract JSON from response
@@ -190,15 +182,7 @@ class ParallelAnalyzer:
     """
     Runs 2x Gemini + 1x GPT-5 concurrently.
 
-    Why parallel:
-    - 60s total vs 105s sequential (35+35+40)
-    - All models see same bill version (consistency)
-    - Timeout prevents one slow model blocking entire pipeline
-
-    Why this combination:
-    - 2x Gemini provides majority vote for Gemini-specific errors
-    - GPT-5 adds architectural diversity (catches Gemini blind spots)
-    - Cost: ~$0.15/bill vs $0.40 with 3 different providers
+    NOTE: Replace one Gemini instance w/ Claude or other model for diversity. 
     """
 
     def __init__(self, gemini_key: str = None, openai_key: str = None):
@@ -211,13 +195,15 @@ class ParallelAnalyzer:
         bill_text: str,
         prompt: str,
         nrg_context: str,
-        timeout: float = 60.0
+        timeout: float = 120.0
     ):
         """
-        Fire all 3 models, wait max 60s.
+        Fire all 3 models, wait max 2 minutes.
 
         Handles partial failures: if Gemini-A times out but Gemini-B + GPT-5
         succeed, we still get 2/3 consensus (acceptable per Q3 blocking decision).
+        
+        TODO: consider retry and exponential backoff
         """
         tasks = []
         if self.gemini_a:

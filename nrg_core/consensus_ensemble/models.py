@@ -4,7 +4,6 @@ from enum import Enum
 
 
 class ConsensusLevel(Enum):
-    """Agreement level across models"""
     UNANIMOUS = "unanimous"      # All 3 agree
     MAJORITY = "majority"        # 2 of 3 agree
     DISPUTED = "disputed"        # 1 or conflicting

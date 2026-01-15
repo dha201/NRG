@@ -706,8 +706,6 @@ class SemanticClusterer:
     - Consensus ensemble needs: all-pairs similarity matrix (3x3 fully connected)
     - All-pairs cosine (3 vectors): 0.1ms vs FAISS setup: 100ms+ (overhead killer)
     - RAG use case: "Find 5 similar docs from 1M". Here: "Compare 3 findings"
-    - Decision: Direct cosine similarity for MVP, revisit if we scale to 20+ models
-    - See: https://milvus.io/ai-quick-reference/how-do-you-utilize-faiss-or-a-similar-vector-database-with-sentence-transformer-embeddings-for-efficient-similarity-search
     """
 
     def __init__(
@@ -730,8 +728,6 @@ class SemanticClusterer:
 
     def calculate_similarity(self, text1: str, text2: str) -> float:
         """
-        Cosine similarity between two bill statements.
-
         Returns value in [0, 1]:
         - 1.0: Identical meaning (after normalization)
         - 0.85: Paraphrase ("exceeding 50MW" vs "over 50 megawatts")
