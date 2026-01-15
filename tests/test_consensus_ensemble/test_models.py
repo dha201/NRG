@@ -1,5 +1,5 @@
 import pytest
-from nrg_core.sota.models import Finding, ConsensusAnalysis, ModelResponse
+from nrg_core.consensus_ensemble.models import Finding, ConsensusAnalysis, ModelResponse
 
 
 def test_finding_creation():

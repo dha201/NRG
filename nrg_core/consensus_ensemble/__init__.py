@@ -1,6 +1,6 @@
-"""SOTA Bill Analysis System - Consensus Ensemble Component"""
+"""Consensus Ensemble Component - Multi-model bill analysis with hallucination detection"""
 
-from nrg_core.sota.models import (
+from nrg_core.consensus_ensemble.models import (
     Finding,
     ModelResponse,
     ConsensusAnalysis,
