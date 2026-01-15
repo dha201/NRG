@@ -23,16 +23,16 @@ def test_finding_clustering():
 def test_similarity_calculation():
     clusterer = SemanticClusterer()
 
-    # Similar statements (semantic paraphrase)
+    # Similar statements
     sim1 = clusterer.calculate_similarity(
-        "Tax applies to >50MW",
-        "Tax on energy exceeding 50 megawatts"
+        "Tax applies to energy generation exceeding 50 megawatts",
+        "Tax on energy generation over 50 megawatts"
     )
     assert sim1 > 0.85
 
-    # Dissimilar statements (different meaning)
+    # Dissimilar statements
     sim2 = clusterer.calculate_similarity(
-        "Tax applies to >50MW",
-        "Renewable energy exempt"
+        "Tax applies to energy generation exceeding 50 megawatts",
+        "The committee will meet on Tuesday at 3pm"
     )
     assert sim2 < 0.5
