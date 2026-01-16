@@ -6,7 +6,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 class SemanticClusterer:
     """
-    Group model findings by semantic meaning for concensus
+    Group model findings by semantic meaning for consensus
 
     Why all-MiniLM-L6-v2 vs all-mpnet-base-v2:
     - MiniLM: 5x faster (real-time response needed), good enough quality
@@ -50,37 +50,19 @@ class SemanticClusterer:
         - 0.60: Related but different concepts
         - 0.0: Completely unrelated (orthogonal vectors)
 
-        Source:
         - "In practical text-embedding scenarios embeddings are trained or normalized 
           so that their cosine similarities typically stay between 0 and 1"
           https://codesignal.com/learn/courses/text-representation-techniques-for-rag-systems/lessons/generating-and-comparing-sentence-embeddings
         """
-        embeddings = self.embedder.encode([text1, text2])   # converts each text into a high-dimensional vector
-                                                            # Each dimension captures some semantic feature
-        similarity = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]  # Measures the angle between two vectors
+        embeddings = self.embedder.encode([text1, text2])
+        similarity = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
         return float(similarity)
 
     def cluster_findings(self, findings: List[dict]) -> List[List[dict]]:
         """
-        Group findings by semantic similarity (greedy clustering):
-        - Pick first unclustered finding
-        - Add all similar findings to its cluster
-        - Move to next unclustered finding
-        Limitation: Order-dependent (might split clusters if middle item dissimilar)
-        
-        Note: 
-        Confidence = model's self-assessment of how certain it is about the finding (0.0 to 1.0)
-        Not important for this operation, can be omitted.(see schema at docs/plans/2026-01-15-consensus-ensemble.md:351-368)
-
-        Called by: ConsensusEnsemble.analyze_consensus() after parallel model responses are received
-
         Args:
             findings: List of finding dictionaries from model responses.
-                Example: [
-                    {"statement": "Tax applies to solar", "confidence": 0.9},
-                    {"statement": "Solar energy is taxed", "confidence": 0.85},
-                    {"statement": "Wind exemption exists", "confidence": 0.8}
-                ]
+                Example: [{"statement": "Tax applies to solar", "confidence": 0.9}]
 
         Returns:
             List of clusters, where each cluster is a list of similar findings.
@@ -93,44 +75,47 @@ class SemanticClusterer:
                     {"statement": "Wind exemption exists", "confidence": 0.8}
                 ]
             ]
-
+            
         Post-MVP improvement: Use hierarchical clustering if grouping quality issues
         TODO: Benchmark greedy vs hierarchical on validation set
         """
         if not findings:
             return []
 
-        # Embed all statement texts once
         statements = [f["statement"] for f in findings]
         embeddings = self.embedder.encode(statements)
-
-        # Compute all-pairs cosine similarity matrix (3x3 for consensus ensemble)
+        
+        # similarity_matrix[i][j] = how similar finding i is to finding j
+        # similarity_matrix = [
+        #     [1.0, 0.92, 0.45],  # Gemini vs [Gemini, GPT-4o, Claude]
+        #     [0.92, 1.0, 0.40],  # GPT-4o vs [Gemini, GPT-4o, Claude]  
+        #     [0.45, 0.40, 1.0]   # Claude vs [Gemini, GPT-4o, Claude]
+        # ]
+        # similarity_matrix[0][1] = 0.92 (Gemini vs GPT similarity)
         similarity_matrix = cosine_similarity(embeddings)
 
-        # Greedy clustering: iterate unassigned, build clusters
+        # Group similar findings to detect model agreement (cluster size = consensus level)
+        # Group findings by semantic similarity (greedy clustering):
+        # - Pick first unclustered finding
+        # - Add all similar findings to its cluster
+        # - Move to next unclustered finding
         clusters = []
-        assigned = set()
+        assigned_indices = set()
 
-        for i, finding in enumerate(findings):
-            if i in assigned:
+        for current_idx, finding in enumerate(findings):
+            if current_idx in assigned_indices:
                 continue
 
-            # Start new cluster with this finding
             cluster = [finding]
-            assigned.add(i)
+            assigned_indices.add(current_idx)
 
-            # Find all similar unassigned findings
-            for j in range(i + 1, len(findings)):
-                if j in assigned:
+            for other_idx in range(current_idx + 1, len(findings)):
+                if other_idx in assigned_indices:
                     continue
 
-                # Similarity threshold is magic number calibrated for bill text
-                # 0.85 chosen because:
-                # - Catches "50MW" vs "fifty megawatts" (threshold variation paraphrases)
-                # - Avoids "tax applies" vs "exemption applies" (semantic opposites)
-                if similarity_matrix[i][j] >= self.threshold:
-                    cluster.append(findings[j])
-                    assigned.add(j)
+                if similarity_matrix[current_idx][other_idx] >= self.threshold:
+                    cluster.append(findings[other_idx])
+                    assigned_indices.add(other_idx)
 
             clusters.append(cluster)
 
