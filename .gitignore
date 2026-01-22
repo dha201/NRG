@@ -23,6 +23,7 @@ Thumbs.db
 
 # Analysis output
 nrg_analysis_*/
+comparison_*/
 
 # VS Code
 .vscode/

@@ -152,6 +152,23 @@ output:
   generate_docx: true
 
 # =============================================================================
+# Deep Research Configuration (Gemini Deep Research Agent)
+# =============================================================================
+deep_research:
+  # Enable Deep Research for comprehensive bill analysis
+  enabled: false  # Set to true to use Deep Research instead of standard LLM
+  
+  # Agent configuration
+  agent: "deep-research-pro-preview-12-2025"
+  
+  # Polling configuration
+  poll_interval: 10     # Seconds between status checks
+  max_wait: 3600        # Maximum wait time (60 minutes)
+  
+  # Cost estimates per task: $2-5 depending on complexity
+  # ~80-160 search queries, ~250k-900k input tokens, ~60-80k output tokens
+
+# =============================================================================
 # API Rate Limiting (optional - for future use)
 # =============================================================================
 rate_limiting:
