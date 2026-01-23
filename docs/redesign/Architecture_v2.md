@@ -397,43 +397,51 @@ The orchestrator maintains three state registries:
 
 **Example: Why Single Source of Truth Matters**
 
-*The Problem:* LLMs have inherent variability - running the same prompt on the same text can produce different outputs. Without centralized state, each stage independently calls the LLM, creating conflicting extractions.
+*Scenario:* Bill has 3 versions (v1: Introduced, v2: Amended, v3: Enrolled). Tax threshold changes from 50MW → 100MW in v2.
 
 *Without centralized state:*
 ```
-Stage 1 (Two-Tier Analysis):
-  Calls LLM on bill text → Finding A: "Tax applies to facilities >50MW"
-  (confidence: 0.85, validated by judge)
+Stage 1 (Two-Tier Analysis on v3):
+  Analyzes latest version (v3)
+  Finding: "Tax applies to facilities >100MW"
+  Validated by judge → stored as finding_001
   
 Stage 2 (Sequential Evolution):
-  Calls LLM on SAME bill text → Finding B: "Tax applies to facilities >100MW"
-  (confidence: 0.75, LLM variability produced different extraction)
-  ⚠️ Conflict! Two different interpretations of the SAME text
+  Walks v1 → v2 → v3 independently
+  Re-extracts from v1: "Tax >50MW" (outdated)
+  Re-extracts from v2: "Tax >100MW" (current)
+  Re-extracts from v3: "Tax >100MW" (current)
+  ⚠️ Creates duplicate finding_002 with same content as finding_001
   
 Stage 3 (Rubric Scoring):
-  Which finding is correct? The validated 50MW or the unvalidated 100MW?
-  ❌ Legal team gets inconsistent analysis, wastes time reconciling
+  Sees both finding_001 and finding_002 with "Tax >100MW"
+  ❌ Wastes cost scoring the same provision twice
+  ❌ Legal team gets duplicate alerts
 ```
 
 *With centralized state:*
 ```
-Stage 1 (Two-Tier Analysis):
-  Calls LLM → Finding A: "Tax applies to facilities >50MW"
-  Validated by judge → confidence: 0.85
-  → Stored in Findings Registry with ID: finding_001
+Stage 1 (Two-Tier Analysis on v3):
+  Analyzes latest version (v3)
+  Finding: "Tax applies to facilities >100MW"
+  Validated by judge → stored in registry as finding_001
   
 Stage 2 (Sequential Evolution):
-  Reads finding_001 from registry: "Tax applies to facilities >50MW"
-  Tracks this finding across versions (v1→v2→v3)
-  ✓ NO LLM call for re-extraction, uses authoritative Stage 1 result
+  Reads finding_001 from registry
+  Walks v1 → v2 → v3 to track evolution:
+    v1: "Tax >50MW" → Updates finding_001 with origin=v1, modified=True
+    v2: "Tax >100MW" → Updates finding_001 with modification_count=1
+    v3: "Tax >100MW" → finding_001 stable in v3
+  ✓ Single finding tracked across versions, no duplication
+  ✓ Registry now shows: finding_001 originated in v1, modified once, current text from v3
   
 Stage 3 (Rubric Scoring):
-  Reads finding_001 from registry
-  Scores: legal_risk=7, financial_impact=8
-  ✓ All stages reference the SAME validated finding
+  Reads finding_001 from registry (current state from v3)
+  Scores ONCE: legal_risk=7, financial_impact=8
+  ✓ Legal team gets single alert with full evolution history
 ```
 
-**Key Insight:** Stage 1 uses a two-tier process (analyst + judge validation) to produce high-confidence findings. Stage 2's job is NOT to re-extract findings but to track how Stage 1's findings evolve. Without centralized state, Stage 2 might accidentally re-extract with lower fidelity, polluting the analysis.
+**Key Insight:** The registry holds the **current state** of each finding from the latest version. Sequential Evolution updates existing findings rather than creating duplicates. Without centralized state, stages independently re-extract the same provisions, creating duplicate findings that waste cost and confuse end users.
 
 **Real-World Impact:**
 - **Without state:** Different stages might extract "annual tax of $50/MW" vs "$50 per megawatt annually" as separate findings, causing duplicate alerts
