@@ -389,6 +389,70 @@ The orchestrator maintains three state registries:
 - **Conditional Execution:** Confidence tracking enables smart resource allocation (only validate uncertain findings with expensive fallback models)
 - **Audit Trail:** Complete state history enables debugging and compliance reporting
 
+#### Complexity Assessment Details
+
+| Criteria | Points | Scoring Logic | Rationale |
+|----------|--------|---------------|-----------|
+| **Length** | 0-2 | `<20 pages = 0`, `20-50 pages = 1`, `>50 pages = 2` | Longer bills contain more provisions requiring deeper analysis |
+| **Versions** | 0-2 | `1 version = 0`, `2-5 versions = 1`, `>5 versions = 2` | More versions indicate complex legislative history with significant changes |
+| **Domain** | 0-2 | `General = 0`, `Environmental = 1`, `Energy/Tax = 2` | Energy/Tax are core to NRG business; Environmental has indirect impact |
+
+#### Route Differences
+
+| Feature | STANDARD (0-2 points) | ENHANCED (3+ points) |
+|---------|------------------------|----------------------|
+| **Analysis Pipeline** | Single-pass extraction | Full two-tier validation |
+| **Multi-Sample Check** | Disabled | Enabled for high-impact findings |
+| **Fallback Model** | Disabled | Enabled for uncertain findings |
+| **Token Budget** | 50K tokens | 100K tokens |
+| **Time Budget** | 30 seconds | 300 seconds |
+| **Evidence Required** | 1 quote minimum | 2 quotes minimum |
+| **Estimated Cost** | ~$0.08 | ~$0.15 |
+
+#### Input/Output
+
+Input (from external APIs: Congress.gov, OpenStates):
+```json
+{
+  "bill_id": "hr150-118",
+  "bill_text": "...",
+  "versions": [...],
+  "metadata": {"title": "...", "sponsor": "...", "status": "..."}
+}
+```
+
+Output:
+```json
+{
+  "route": "ENHANCED",
+  "tasks": [
+    {"stage": "sequential_evolution", "priority": 1},
+    {"stage": "two_tier_validation", "priority": 2},
+    {"stage": "causal_reasoning", "priority": 3},
+    {"stage": "rubric_scoring", "priority": 4}
+  ],
+  "constraints": {
+    "token_budget": 100000,
+    "time_budget_seconds": 300,
+    "min_evidence_count": 2
+  }
+}
+```
+
+#### Failure Modes
+
+1. **Routing Error:** Complexity misclassified → Log for recalibration, complete analysis → No immediate impact
+2. **Token Budget Exceeded:** Running counter hits 100k → Abort remaining stages, return partial with warning → Incomplete analysis
+3. **Task Orchestration Failure:** Stage crashes/times out → Skip failed stage, continue, flag incomplete → Partial analysis
+
+#### Performance
+
+- Latency: <1s (routing + decomposition)
+- Throughput: Not a bottleneck (stateless)
+- Resource: <1MB memory
+
+---
+
 **End-to-End Pipeline Architecture**
 
 The following diagram shows how the orchestration layer coordinates all analysis stages from API call to final output:
@@ -621,237 +685,17 @@ STAGE 6: Later - v4 Detected
 
 **Why Centralized State is Critical:**
 
-The Findings Registry prevents these problems:
+The Findings Registry prevents these problems (see Component 2: Sequential Evolution Agent for full schema):
 
 | Problem | Without State | With State |
 |---------|---------------|------------|
-| **Duplicate findings** | Stage 2 extracts "Tax >100MW", Stage 3 extracts same text again → 2 findings | Single finding F1 tracked through pipeline |
+| **Duplicate findings** | Validation re-extracts "Tax >100MW" → 2 findings | Single finding F1 tracked by ID through pipeline |
 | **Conflicting interpretations** | LLM variability: one run says "50MW", another says "100MW" | First extraction is canonical, later stages reference by ID |
-| **Wasted cost** | Score same finding twice on rubrics | Score once, ID prevents duplicate processing |
-| **Lost history** | No record of how finding evolved | Full lineage: origin version, modification count, stability |
-| **Inefficient updates** | Re-analyze all versions when v4 appears | Incremental: only analyze new version |
+| **Wasted cost** | Score same finding twice on rubrics | Score once, `finding_registry[F1]` prevents duplicate processing |
+| **Lost history** | No record of how finding evolved | Full lineage: `origin_version`, `modification_count`, `stability_score` |
+| **Inefficient updates** | Re-analyze all versions when v4 appears | Incremental: load `findings_registry`, analyze only new version |
 
-**Complexity Assessment Details:**
-
-| Criteria | Points | Scoring Logic | Rationale |
-|----------|--------|---------------|-----------|
-| **Length** | 0-2 | `<20 pages = 0`, `20-50 pages = 1`, `>50 pages = 2` | Longer bills contain more provisions requiring deeper analysis |
-| **Versions** | 0-2 | `1 version = 0`, `2-5 versions = 1`, `>5 versions = 2` | More versions indicate complex legislative history with significant changes |
-| **Domain** | 0-2 | `General = 0`, `Environmental = 1`, `Energy/Tax = 2` | Energy/Tax are core to NRG business; Environmental has indirect impact |
-
-**Route Differences:**
-
-| Feature | STANDARD (0-2 points) | ENHANCED (3+ points) |
-|---------|------------------------|----------------------|
-| **Analysis Pipeline** | Single-pass primary analyst | Full two-tier validation |
-| **Multi-Sample Check** | Disabled | Enabled for high-impact findings |
-| **Fallback Model** | Disabled | Enabled for uncertain findings |
-| **Token Budget** | 50K tokens | 100K tokens |
-| **Time Budget** | 30 seconds | 300 seconds |
-| **Evidence Required** | 1 quote minimum | 2 quotes minimum |
-| **Estimated Cost** | ~$0.08 | ~$0.15 |
-
-**Input/Output:**
-
-Input (from external APIs: Congress.gov, OpenStates):
-```json
-{
-  "bill_id": "hr150-118",
-  "bill_text": "...",
-  "versions": [...],
-  "metadata": {"title": "...", "sponsor": "...", "status": "..."}
-}
-```
-
-Output:
-```json
-{
-  "route": "ENHANCED",
-  "tasks": [
-    {"stage": "sequential_evolution", "priority": 1},
-    {"stage": "two_tier_validation", "priority": 2},
-    {"stage": "causal_reasoning", "priority": 3},
-    {"stage": "rubric_scoring", "priority": 4}
-  ],
-  "constraints": {
-    "token_budget": 100000,
-    "time_budget_seconds": 300,
-    "min_evidence_count": 2
-  }
-}
-```
-
-**Failure Modes:**
-
-1. **Routing Error:** Complexity misclassified → Log for recalibration, complete analysis → No immediate impact
-2. **Token Budget Exceeded:** Running counter hits 100k → Abort remaining stages, return partial with warning → Incomplete analysis
-3. **Task Orchestration Failure:** Stage crashes/times out → Skip failed stage, continue, flag incomplete → Partial analysis
-
-**Performance:**
-- Latency: <1s (routing + decomposition)
-- Throughput: Not a bottleneck (stateless)
-- Resource: <1MB memory
-
----
-
-### Component 2: Two-Tier Analysis
-
-```
-┌─────────────────────────────────────────────────────────┐
-│ TIER 1: PRIMARY ANALYST                                 │
-│                                                         │
-│ Model: GPT-4o or equivalent strong model                │
-│ Prompt: Structured analysis with NRG context            │
-│                                                         │
-│ Output:                                                 │
-│   findings: [                                           │
-│     {                                                   │
-│       statement: "Tax applies to >50MW",                │
-│       quotes: ["Section 2.1b"],                         │
-│       confidence: 0.85,                                 │
-│       impact_estimate: 7/10                             │
-│     }                                                   │
-│   ]                                                     │
-└─────────────────┬───────────────────────────────────────┘
-                  │
-                  v
-┌─────────────────────────────────────────────────────────┐
-│ TIER 1.5: MULTI-SAMPLE CHECK (Conditional)             │
-│                                                         │
-│ Trigger: IF impact_estimate >= 6 OR confidence < 0.7    │
-│                                                         │
-│ Process:                                                │
-│   - Re-run analysis 2-3x with different prompts         │
-│   - Compare outputs for agreement (>85% similarity)     │
-│   - Keep common elements across all runs                │
-│                                                         │
-│ Example:                                                │
-│   Run 1: "Tax applies to >50MW, renewable exempt"       │
-│   Run 2: "Tax on generation exceeding 50MW, but         │
-│          solar/wind facilities exempt"                  │
-│   Run 3: "50 megawatt threshold, exemption for          │
-│          renewable energy per Section 5.2"              │
-│   Agreement: All 3 runs agree (>90% similar)            │
-│   Final: "Tax >50MW, renewable exempt" (validated)      │
-│                                                         │
-│ Cost: 2-3x primary but only ~20% of findings trigger    │
-│ Average cost: 0.2 × (2.5 × $0.08) = $0.04              │
-└─────────────────┬───────────────────────────────────────┘
-                  │
-                  v
-┌─────────────────────────────────────────────────────────┐
-│ TIER 2: JUDGE MODEL                                     │
-│                                                         │
-│ Input: Bill text + candidate findings                   │
-│                                                         │
-│ Validation:                                             │
-│   1. Quote verification                                 │
-│      - Does quote exist in bill? Y/N                    │
-│      - Is quote verbatim or paraphrased?                │
-│                                                         │
-│   2. False claim detection                              │
-│      - Does statement claim something not in bill?      │
-│      - Flag: plausible / likely false claim             │
-│                                                         │
-│   3. Confidence calibration                             │
-│      - Evidence quality: 0-1                            │
-│      - Ambiguity level: 0-1                             │
-│      - Numeric correctness: Y/N                         │
-│                                                         │
-│ Output:                                                 │
-│   validated_findings: [                                 │
-│     {                                                   │
-│       ...original finding...,                           │
-│       judge_validity: "plausible",                      │
-│       judge_confidence: 0.82,                           │
-│       evidence_quality: 0.9,                            │
-│       ambiguity: 0.3                                    │
-│     }                                                   │
-│   ]                                                     │
-└─────────────────┬───────────────────────────────────────┘
-                  │
-                  v (only if needed)
-┌─────────────────────────────────────────────────────────┐
-│ FALLBACK: SECOND MODEL (Secondary Check)              │
-│                                                         │
-│ Trigger: IF judge_confidence in [0.6, 0.8]              │
-│          AND impact >= 6/10                             │
-│                                                         │
-│ Model: Different provider (e.g., Claude if GPT primary) │
-│                                                         │
-│ Focused prompt:                                         │
-│   "Review this finding. Is the interpretation correct?  │
-│    Provide alternative if you disagree."                │
-│                                                         │
-│ Aggregation:                                            │
-│   - If second model agrees → confidence boost +0.1      │
-│   - If second model disagrees → flag for expert review  │
-│                                                         │
-│ Frequency: ~15-20% of findings                          │
-│ Cost: 0.18 × $0.08 = $0.014                            │
-└─────────────────────────────────────────────────────────┘
-```
-
-Validate findings extracted by Sequential Evolution through multi-tier analysis with conditional complexity scaling.
-
-**Input/Output:**
-
-Input (from Sequential Evolution - extracted findings):
-```json
-{
-  "bill_text": "...",
-  "findings_registry": {
-    "F1": {"statement": "Tax >100MW", "origin_version": 1, "modification_count": 1},
-    "F3": {"statement": "Renewables exempt", "origin_version": 2, "modification_count": 0}
-  },
-  "stability_scores": {"F1": 0.85, "F3": 0.70},
-  "nrg_context": "..."
-}
-```
-
-Output:
-```json
-{
-  "findings": [
-    {
-      "statement": "Tax applies to >50MW generation",
-      "quotes": ["Section 2.1b: facilities exceeding 50 megawatts"],
-      "confidence": 0.85,
-      "impact_estimate": 7,
-      "judge_validity": "plausible",
-      "judge_confidence": 0.82,
-      "evidence_quality": 0.9,
-      "multi_sample_agreement": 0.92,
-      "second_model_reviewed": false
-    }
-  ],
-  "cost_breakdown": {
-    "tier1": 0.08,
-    "tier1.5": 0.008,
-    "tier2": 0.02,
-    "fallback": 0.014,
-    "total": 0.122
-  }
-}
-```
-
-**Failure Modes:**
-
-1. **Primary Model Unavailable:** LLM API timeout/error → Retry 3x with exponential backoff → If all fail, use fallback model as primary → +$0.08 cost
-2. **Multi-Sample Disagreement:** <85% agreement across samples → Flag for human review, use most conservative interpretation → Degraded confidence score
-3. **Judge Model Contradiction:** Judge invalidates primary finding → Drop finding or flag for expert review → Possible false negative
-4. **Fallback Model Unavailable:** Second model API error → Skip fallback, proceed with judge-validated finding → Lower confidence, may miss errors
-
-**Performance:**
-- Latency: 20-40s (20s tier1, +10s tier1.5 if triggered, +5s tier2, +8s fallback if triggered)
-- Throughput: ~2-3 bills/min (serial LLM calls)
-- Resource: <10MB memory per bill
-
-**Cost: ~$0.12 per bill** (vs $0.30 for 3-model ensemble)
-
----
-
-### Component 3: Sequential Evolution Agent
+### Component 2: Sequential Evolution Agent
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -1094,6 +938,130 @@ Memory stays ~500 tokens (not 10k + 10k).
 
 ---
 
+### Component 3: Two-Tier Validation
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ TIER 1.5: MULTI-SAMPLE CHECK (Conditional)             │
+│                                                         │
+│ Trigger: IF impact_estimate >= 6 OR confidence < 0.7    │
+│                                                         │
+│ Process:                                                │
+│   - Re-run extraction 2-3x with different prompts       │
+│   - Compare outputs for agreement (>85% similarity)     │
+│   - Flag findings with low agreement                    │
+│                                                         │
+│ Cost: 2-3x extraction but only ~20% of findings trigger │
+│ Average cost: 0.2 × (2.5 × $0.08) = $0.04              │
+└─────────────────┬───────────────────────────────────────┘
+                  │
+                  v
+┌─────────────────────────────────────────────────────────┐
+│ TIER 2: JUDGE MODEL                                     │
+│                                                         │
+│ Input: findings_registry + bill text (latest version)   │
+│                                                         │
+│ Validation:                                             │
+│   1. Quote verification                                 │
+│      - Does quote exist in bill? Y/N                    │
+│      - Is quote verbatim or paraphrased?                │
+│                                                         │
+│   2. Hallucination detection                            │
+│      - Does finding claim something not in bill?        │
+│      - Flag: plausible / likely hallucination           │
+│                                                         │
+│   3. Confidence calibration                             │
+│      - Evidence quality: 0-1                            │
+│      - Ambiguity level: 0-1                             │
+│                                                         │
+│ Output:                                                 │
+│   validated_findings: [                                 │
+│     {                                                   │
+│       ...original finding...,                           │
+│       judge_validity: "plausible",                      │
+│       judge_confidence: 0.82,                           │
+│       evidence_quality: 0.9                             │
+│     }                                                   │
+│   ]                                                     │
+└─────────────────┬───────────────────────────────────────┘
+                  │
+                  v (only if needed)
+┌─────────────────────────────────────────────────────────┐
+│ TIER 2.5: FALLBACK MODEL (Secondary Check)             │
+│                                                         │
+│ Trigger: IF judge_confidence in [0.6, 0.8]              │
+│          AND impact >= 7/10                             │
+│                                                         │
+│ Model: Different provider (e.g., Claude if GPT primary) │
+│                                                         │
+│ Aggregation:                                            │
+│   - If second model agrees → confidence boost +0.1      │
+│   - If second model disagrees → flag for expert review  │
+│                                                         │
+│ Frequency: ~15-20% of findings                          │
+│ Cost: 0.18 × $0.08 = $0.014                            │
+└─────────────────────────────────────────────────────────┘
+```
+
+Validate findings extracted by Sequential Evolution. No primary extraction needed—findings already exist in `findings_registry`.
+
+**Input/Output:**
+
+Input (from Component 2: Sequential Evolution):
+```json
+{
+  "bill_text": "...",
+  "findings_registry": {
+    "F1": {"statement": "Tax >100MW", "origin_version": 1, "modification_count": 1},
+    "F3": {"statement": "Renewables exempt", "origin_version": 2, "modification_count": 0}
+  },
+  "stability_scores": {"F1": 0.85, "F3": 0.70}
+}
+```
+
+Output:
+```json
+{
+  "validated_findings": [
+    {
+      "id": "F1",
+      "statement": "Tax applies to >100MW generation",
+      "judge_validity": "plausible",
+      "judge_confidence": 0.92,
+      "evidence_quality": 0.9,
+      "multi_sample_agreement": 0.92,
+      "second_model_reviewed": false
+    }
+  ],
+  "filtered_hallucinations": [],
+  "cost_breakdown": {
+    "tier1.5": 0.008,
+    "tier2": 0.02,
+    "tier2.5": 0.014,
+    "total": 0.042
+  }
+}
+```
+
+**Why No Tier 1 (Primary Analyst)?**
+
+Sequential Evolution already performs extraction. Two-Tier Validation's role is now purely validation:
+- Tier 1.5: Re-run for consistency (catches LLM variability)
+- Tier 2: Judge validates against bill text (catches hallucinations)
+- Tier 2.5: Second model for uncertain findings (catches edge cases)
+
+**Failure Modes:**
+
+1. **Multi-Sample Disagreement:** <85% agreement → Flag for human review, use most conservative interpretation
+2. **Judge Contradiction:** Judge invalidates finding → Drop or flag for expert review
+3. **Fallback Unavailable:** API error → Skip, proceed with judge-validated finding
+
+**Performance:**
+- Latency: 15-25s (no tier1, +10s tier1.5 if triggered, +5s tier2, +8s tier2.5 if triggered)
+- Cost: ~$0.04 per bill (reduced from $0.12 - no duplicate extraction)
+
+---
+
 ### Component 4: Rubric-Based Scoring
 
 ```
@@ -1212,7 +1180,7 @@ Score findings on explicit rubrics with audit trails for transparency and calibr
 
 **Input/Output:**
 
-Input (from Two-Tier Validation - validated findings):
+Input (from Component 3: Two-Tier Validation):
 ```json
 {
   "findings": [
