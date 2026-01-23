@@ -397,36 +397,38 @@ The orchestrator maintains three state registries:
 
 **Example: Why Single Source of Truth Matters**
 
-*Without centralized state (❌ broken):*
+*Without centralized state:*
 ```
 Stage 1 (Two-Tier Analysis):
-  Finding A: "Tax applies to facilities >50MW" (confidence: 0.85)
+  Extracts: "Tax applies to facilities >50MW"
   
 Stage 2 (Sequential Evolution):
-  Re-analyzes bill independently
-  Finding A': "Tax applies to facilities >100MW" (confidence: 0.75)
-  ⚠️ Conflict! Same provision, different interpretation
+  Re-analyzes same bill text independently
+  Extracts: "Tax threshold is 50 megawatts for power plants"
+  ⚠️ Conflict! Same provision, different wording
   
 Stage 3 (Rubric Scoring):
-  Which finding to score? A or A'?
-  Legal team receives inconsistent analysis
+  Which one to score?
+  - "facilities >50MW" → scores legal_risk=7
+  - "50 megawatts for power plants" → scores legal_risk=6
+  Legal team receives 2 findings for same provision with different scores
 ```
 
-*With centralized state (✅ correct):*
+*With centralized state:*
 ```
 Stage 1 (Two-Tier Analysis):
-  Finding A: "Tax applies to facilities >50MW" (confidence: 0.85)
+  Extracts: "Tax applies to facilities >50MW"
   → Stored in Findings Registry with ID: finding_001
   
 Stage 2 (Sequential Evolution):
   Reads finding_001 from registry
-  Tracks: "finding_001 stable across versions v1→v2→v3"
-  ✓ No re-extraction, references existing finding
+  Checks: "finding_001 appears in v1, v2, v3 (stable)"
+  ✓ No re-extraction, just tracks stability
   
 Stage 3 (Rubric Scoring):
   Reads finding_001 from registry
-  Scores: legal_risk=7, financial_impact=8
-  ✓ Single consistent finding flows through entire pipeline
+  Scores once: legal_risk=7, financial_impact=8
+  ✓ Legal team receives 1 finding with consistent scores
 ```
 
 **Real-World Impact:**
