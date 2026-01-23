@@ -391,13 +391,47 @@ The orchestrator maintains three state registries:
 
 **Why This Works:**
 - **Memory Efficiency:** Structured memory stays fixed size vs accumulating full bill texts across stages
-- **Consistency:** Single source of truth prevents conflicting findings from different stages
-  - *Example conflict without state management:* Primary analyst extracts "Tax applies to facilities >50MW" (impact: 7). Sequential evolution stage re-analyzes same provision from different version, extracts "Tax threshold is 50 megawatts" (impact: 6). Rubric scoring receives two similar but conflicting findings, scores both, inflates total impact estimate.
-  - *How state prevents this:* Findings Registry deduplicates by semantic similarity. When sequential evolution encounters existing finding, it updates the registry entry with version-specific details rather than creating duplicate. Rubric scoring sees single consolidated finding with complete version history.
+- **Consistency:** Single source of truth prevents conflicting findings from different stages (see example below)
 - **Conditional Execution:** Confidence tracking enables smart resource allocation (only validate uncertain findings with expensive fallback models)
-  - *Example:* Primary analyst extracts 5 findings with confidences [0.9, 0.85, 0.65, 0.8, 0.55]. Without confidence tracking, system either validates all 5 (wasteful) or none (risky). With tracking, only findings with confidence <0.7 trigger multi-sample check (2 out of 5), saving 60% of validation cost while focusing resources on uncertain findings.
 - **Audit Trail:** Complete state history enables debugging and compliance reporting
-  - *Example use case:* Legal team questions why bill HB-123 was scored 8/10 on legal risk. State history shows: Primary analyst extracted finding → Judge validated quotes → Multi-sample check ran (agreement: 0.92) → Rubric scoring applied with specific anchor "6-8: Major obligations". Each decision point is traceable with timestamps and intermediate outputs.
+
+**Example: Why Single Source of Truth Matters**
+
+*Without centralized state (❌ broken):*
+```
+Stage 1 (Two-Tier Analysis):
+  Finding A: "Tax applies to facilities >50MW" (confidence: 0.85)
+  
+Stage 2 (Sequential Evolution):
+  Re-analyzes bill independently
+  Finding A': "Tax applies to facilities >100MW" (confidence: 0.75)
+  ⚠️ Conflict! Same provision, different interpretation
+  
+Stage 3 (Rubric Scoring):
+  Which finding to score? A or A'?
+  Legal team receives inconsistent analysis
+```
+
+*With centralized state (✅ correct):*
+```
+Stage 1 (Two-Tier Analysis):
+  Finding A: "Tax applies to facilities >50MW" (confidence: 0.85)
+  → Stored in Findings Registry with ID: finding_001
+  
+Stage 2 (Sequential Evolution):
+  Reads finding_001 from registry
+  Tracks: "finding_001 stable across versions v1→v2→v3"
+  ✓ No re-extraction, references existing finding
+  
+Stage 3 (Rubric Scoring):
+  Reads finding_001 from registry
+  Scores: legal_risk=7, financial_impact=8
+  ✓ Single consistent finding flows through entire pipeline
+```
+
+**Real-World Impact:**
+- **Without state:** Different stages might extract "annual tax of $50/MW" vs "$50 per megawatt annually" as separate findings, causing duplicate alerts
+- **With state:** First extraction is canonical; later stages reference it by ID, preventing duplication and ensuring all scores/analysis apply to the same finding
 
 **Complexity Assessment Details:**
 
