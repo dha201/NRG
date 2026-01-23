@@ -2,13 +2,59 @@
 
 ## Executive Summary
 
-The Bill Analysis System achieves <1% false positive rate while reducing costs by 60% through:
-1. **Two-tier consensus**: Single primary analyst + judge + targeted second opinions (vs. 3-model parallel ensemble)
-2. **Sequential evolution**: Single agent with structured memory walking versions (vs. independent per-version analysis)
-3. **Rubric-based scoring**: Explicit rating scales with audit trails (vs. opaque aggregation)
-4. **Supervisor-researcher-judge pattern**: Clear separation of orchestration, analysis, and validation
+### Business Requirement
+Automated legislative intelligence platform monitoring federal and state legislation affecting NRG Energy operations. Delivers AI-powered analysis grounded in NRG business context with actionable impact scoring, version tracking, and automated reporting.
 
-**Cost Reduction**: From ~$0.40/bill to ~$0.15/bill while maintaining accuracy through strategic model usage and self-consistency sampling.
+### Capabilities
+- **Bill Discovery & Monitoring**: Periodic scanning of legislative APIs (Congress.gov, OpenStates) with configured search criteria
+- **NRG-Grounded Analysis**: AI analysis using business context to identify operational, financial, legal, and compliance impacts
+- **Version Evolution Tracking**: monitoring bill changes across legislative versions with stability scoring
+- **Impact Assessment**: Rubric-based scoring (0-10 scale) across legal risk, operational disruption, financial impact, and ambiguity
+- **Automated Reporting**: DOCX/PDF generation with email notifications to Legal team
+- **Data Lake Integration**: Analysis stored for RAG-enabled chatbot queries
+
+---
+
+## Product Requirements
+
+### Functional Requirements
+- **FR-001**: System shall scan legislative APIs every x hours for new bills matching configured search terms
+- **FR-002**: System shall analyze bills within X seconds (simple bills, single version) or Y minutes (complex bills, multiple versions requiring deep analysis) of detection
+- **FR-003**: System shall track all bill versions and generate evolution analysis showing changes across versions
+- **FR-004**: System shall score each bill across 4 rubric dimensions (legal, operational, financial, ambiguity) on 0-10 scale
+- **FR-005**: System shall generate DOCX/PDF reports with findings, quotes, impact scores, and routing recommendations
+- **FR-006**: System shall send email notifications to Legal team mailbox with links to analysis
+- **FR-007**: System shall store bill text and analysis in NRG data lake for RAG chatbot integration
+
+### Non-Functional Requirements
+- **Performance**: 95th percentile latency <5 min per bill, throughput ≥100 bills/day
+- **Availability**: 99.5% uptime during business hours (6am-8pm ET, weekdays)
+- **Accuracy**(Tentative): False positive rate <1%, false negative rate <2%
+- **Security**:
+- **Cost**:
+
+### Success Metrics
+- **Accuracy**: <1% false positive rate on silver set evaluation
+- **Coverage**: 95% of relevant bills detected within 12 hours of publication
+- **Efficiency**:
+- **User Satisfaction**:
+- **Time Savings**: 80% reduction in manual bill review time
+
+### Acceptance Criteria
+-
+-
+-
+
+### Dependencies
+- **External APIs**: Congress.gov and OpenStates availability (historical uptime 99.9%)
+- **LLM Providers**: OpenAI/Anthropic/Gemini API rate limits and pricing changes
+- **NRG Infrastructure**: Azure Functions, data lake access, SMTP for notifications
+- **Risk**: LLM hallucinations on edge cases (mitigation: judge validation + human review workflow)
+
+### Out of Scope
+- Analysis of regulations, executive orders, or court decisions (legislation only)
+- International or municipal legislation (federal and state only)
+- Integration with external case management or workflow systems
 
 ---
 
@@ -262,11 +308,10 @@ Audit Trail:
 │ Input: Bill + metadata                  │
 │                                         │
 │ Step 1: Assess Complexity               │
-│   - Length > 20 pages? → Complex        │
-│   - Multiple versions? → Complex        │
-│   - High-impact domain? → Complex       │
-│   Decision: STANDARD (80%) or           │
-│             ENHANCED (20%)              │
+│   - Length scoring: <20p=0, 20-50p=1, >50p=2 │
+│   - Version scoring: 1v=0, 2-5v=1, >5v=2 │
+│   - Domain scoring: General=0, Env=1, Energy/Tax=2 │
+│   Total 0-2pts → STANDARD (80%), 3+pts → ENHANCED (20%) │
 │                                         │
 │ Step 2: Decompose Tasks                 │
 │   - Task 1: Bill understanding          │
@@ -330,6 +375,32 @@ Output:
 - Latency: <1s (routing + decomposition)
 - Throughput: Not a bottleneck (stateless)
 - Resource: <1MB memory
+
+**Complexity Assessment Details:**
+
+| Criteria | Points | Scoring Logic | Rationale |
+|----------|--------|---------------|-----------|
+| **Length** | 0-2 | `<20 pages = 0`, `20-50 pages = 1`, `>50 pages = 2` | Longer bills contain more provisions requiring deeper analysis |
+| **Versions** | 0-2 | `1 version = 0`, `2-5 versions = 1`, `>5 versions = 2` | More versions indicate complex legislative history with significant changes |
+| **Domain** | 0-2 | `General = 0`, `Environmental = 1`, `Energy/Tax = 2` | Energy/Tax are core to NRG business; Environmental has indirect impact |
+
+**Route Differences:**
+
+| Feature | STANDARD (0-2 points) | ENHANCED (3+ points) |
+|---------|------------------------|----------------------|
+| **Analysis Pipeline** | Single-pass primary analyst | Full two-tier validation |
+| **Multi-Sample Check** | Disabled | Enabled for high-impact findings |
+| **Fallback Model** | Disabled | Enabled for uncertain findings |
+| **Token Budget** | 50K tokens | 100K tokens |
+| **Time Budget** | 30 seconds | 300 seconds |
+| **Evidence Required** | 1 quote minimum | 2 quotes minimum |
+| **Estimated Cost** | ~$0.08 | ~$0.15 |
+
+**Why Code-Based Routing:**
+- **Cost**: $0.00 vs $0.02 per bill for LLM-based routing
+- **Consistency**: Deterministic rules ensure predictable decisions
+- **Tunability**: Thresholds adjustable without prompt engineering
+- **Explainability**: Clear breakdown of routing decisions
 
 ---
 
