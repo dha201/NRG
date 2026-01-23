@@ -1,14 +1,19 @@
 # NRG Legislative Intelligence - Configuration
 # Shared config for POC 2 and V2 pipelines
+#
+# Section Labels:
+#   [SHARED]  - Used by both POC 2 and V2 pipelines
+#   [V2 ONLY] - Used exclusively by V2 pipeline
+#   [POC 2]   - Legacy settings for POC 2 compatibility
 
 # ============================================================================
-# LOGGING & DEBUGGING
+# LOGGING & DEBUGGING [V2 ONLY]
 # ============================================================================
 logging:
   # Verbosity levels: quiet, normal, verbose, debug
   level: normal
 
-  # Show detailed traces for each pipeline stage
+  # [V2 ONLY] Show detailed traces for each pipeline stage
   trace:
     sequential_evolution: true    # Show version-by-version analysis
     two_tier_validation: true     # Show judge validation decisions
@@ -23,7 +28,7 @@ logging:
     show_cost_estimates: true
     use_colors: true
 
-# Legacy debug flags (for POC 2 compatibility)
+# [POC 2] Legacy debug flags (for POC 2 compatibility)
 debug:
   enabled: true
   api_order: true
@@ -33,7 +38,7 @@ debug:
   change_detection: false
 
 # ============================================================================
-# LLM CONFIGURATION
+# LLM CONFIGURATION [SHARED]
 # ============================================================================
 llm:
   # Primary provider: gemini, openai, anthropic
@@ -56,8 +61,9 @@ llm:
     model: claude-sonnet-4-20250514
 
 # ============================================================================
-# V2 PIPELINE CONFIGURATION
+# V2 PIPELINE CONFIGURATION [V2 ONLY]
 # ============================================================================
+# All settings in this section are exclusive to the V2 pipeline
 v2:
   # Orchestration settings
   orchestration:
@@ -125,7 +131,7 @@ v2:
       critical: [9, 10]
 
 # ============================================================================
-# DATA SOURCES
+# DATA SOURCES [SHARED]
 # ============================================================================
 sources:
   congress:
@@ -157,7 +163,7 @@ sources:
         - HB391
 
 # ============================================================================
-# CHANGE TRACKING
+# CHANGE TRACKING [SHARED]
 # ============================================================================
 change_tracking:
   enabled: true
@@ -169,7 +175,7 @@ change_tracking:
   min_check_interval_hours: 0
 
 # ============================================================================
-# VERSION TRACKING
+# VERSION TRACKING [SHARED]
 # ============================================================================
 version_tracking:
   enabled: true
@@ -183,7 +189,7 @@ version_tracking:
     regulations: false
 
 # ============================================================================
-# OUTPUT & REPORTS
+# OUTPUT & REPORTS [SHARED]
 # ============================================================================
 output:
   # Output directory for reports
@@ -201,10 +207,10 @@ output:
   include_amendments: true
   highlight_changes: true
   include_audit_trail: true
-  include_rubric_details: true
+  include_rubric_details: true  # [V2 ONLY] Include rubric scoring details
 
 # ============================================================================
-# DEEP RESEARCH (Optional)
+# DEEP RESEARCH [SHARED] (Optional)
 # ============================================================================
 deep_research:
   enabled: false
@@ -213,7 +219,7 @@ deep_research:
   max_wait: 3600
 
 # ============================================================================
-# RATE LIMITING
+# RATE LIMITING [SHARED]
 # ============================================================================
 rate_limiting:
   congress_delay: 0.5
