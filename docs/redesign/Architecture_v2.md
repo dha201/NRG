@@ -334,35 +334,27 @@ Audit Trail:
 └─────────────────────────────────────────┘
 ```
 
-The Orchestration Layer is a **code-based controller** (not an LLM agent) that manages the entire analysis pipeline. It uses deterministic rules for predictable, cost-efficient control flow across four key responsibilities:
+The Orchestration Layer is a **code-based controller** that manages the entire analysis pipeline. It uses deterministic rules for predictable, cost-efficient control flow across four key responsibilities:
 
-#### Step 1: Assess Complexity
+#### 1: Assess Complexity
 
-**Purpose:** Route bills to appropriate analysis depth based on objective complexity metrics.
+Route bills to appropriate analysis depth based on objective complexity metrics.
 
-**How It Works:**
 The system scores each bill across three dimensions using deterministic rules:
 - **Length Scoring:** Page count indicates provision density (`<20 pages = 0`, `20-50 = 1`, `>50 = 2`)
 - **Version Scoring:** Multiple versions signal complex legislative evolution (`1 version = 0`, `2-5 = 1`, `>5 = 2`)
 - **Domain Scoring:** Business impact varies by subject matter (`General = 0`, `Environmental = 1`, `Energy/Tax = 2`)
 
-**Why This Works:**
-- **Cost Efficiency:** Code-based routing costs $0.00 vs $0.02/bill for LLM classification
-- **Consistency:** Deterministic rules eliminate LLM variability in routing decisions
-- **Tunability:** Thresholds can be adjusted based on empirical accuracy without prompt engineering
-- **Explainability:** Every routing decision has a clear numeric breakdown for audit trails
-
 **Routing Decision:**
 - **0-2 points → STANDARD route** (~80% of bills): Simple bills get single-pass analysis with basic validation
 - **3+ points → ENHANCED route** (~20% of bills): Complex bills get full two-tier pipeline with judge validation, multi-sample checks, and fallback models
 
-#### Step 2: Decompose Tasks
+#### 2: Decompose Tasks
 
-**Purpose:** Break analysis into sequential stages with clear dependencies and priorities.
+Break analysis into sequential stages with clear dependencies and priorities.
 
-**How It Works:**
 The orchestrator decomposes the analysis into ordered stages:
-1. **Two-Tier Analysis** (Priority 1): Primary analyst extracts findings → Judge validates
+1. **Two-Tier Analysis** (Priority 1): Primary analyst extracts findings -> Judge validates
 2. **Sequential Evolution** (Priority 2): Track changes across bill versions with structured memory
 3. **Causal Chain Reasoning** (Priority 3): Identify cause-effect relationships between provisions
 4. **Rubric Scoring** (Priority 4): Score validated findings on legal/financial/operational/ambiguity dimensions
@@ -373,15 +365,14 @@ The orchestrator decomposes the analysis into ordered stages:
 - **Failure Isolation:** If one stage fails, others can continue; partial results better than total failure
 - **Parallelization Opportunity:** Future optimization can run independent stages concurrently
 
-#### Step 3: Enforce Gates
+#### 3: Enforce Gates (circuit breaker)
 
-**Purpose:** Prevent runaway costs and ensure minimum quality standards.
+Prevent runaway costs and ensure minimum quality standards.
 
-**How It Works:**
 The orchestrator enforces three types of constraints:
 - **Token Budget:** Running counter tracks LLM API usage; abort if exceeds route limit (50K for STANDARD, 100K for ENHANCED)
-- **Time Budget:** Wall-clock timer prevents indefinite hangs (30s for STANDARD, 300s for ENHANCED)
-- **Quality Gates:** Minimum evidence requirements ensure findings are quote-backed (1 quote for STANDARD, 2 for ENHANCED)
+- **Time Budget:** timer prevents indefinite hangs (30s for STANDARD, 300s for ENHANCED)
+- **Quality Gates:** Minimum evidence requirements ensure findings are quoted (1 quote for STANDARD, 2 for ENHANCED)
 
 **Why This Works:**
 - **Cost Control:** Token budgets prevent expensive bills from consuming disproportionate resources
@@ -389,11 +380,10 @@ The orchestrator enforces three types of constraints:
 - **Quality Assurance:** Evidence gates catch hallucinations before they reach end users
 - **Graceful Degradation:** When limits hit, return partial results with clear flags rather than failing completely
 
-#### Step 4: Maintain State
+#### 4: Maintain State
 
-**Purpose:** Enable cross-stage information flow and provide audit trail of analysis progression.
+Enable cross-stage information flow and provide audit trail of analysis progression.
 
-**How It Works:**
 The orchestrator maintains three state registries:
 - **Cross-Task Memory:** Structured JSON store (~500 tokens) holding findings from completed stages, enabling later stages to reference earlier results without re-analysis
 - **Findings Registry:** Deduplicated list of all extracted findings with validation status, preventing redundant processing
@@ -402,8 +392,12 @@ The orchestrator maintains three state registries:
 **Why This Works:**
 - **Memory Efficiency:** Structured memory stays fixed size vs accumulating full bill texts across stages
 - **Consistency:** Single source of truth prevents conflicting findings from different stages
+  - *Example conflict without state management:* Primary analyst extracts "Tax applies to facilities >50MW" (impact: 7). Sequential evolution stage re-analyzes same provision from different version, extracts "Tax threshold is 50 megawatts" (impact: 6). Rubric scoring receives two similar but conflicting findings, scores both, inflates total impact estimate.
+  - *How state prevents this:* Findings Registry deduplicates by semantic similarity. When sequential evolution encounters existing finding, it updates the registry entry with version-specific details rather than creating duplicate. Rubric scoring sees single consolidated finding with complete version history.
 - **Conditional Execution:** Confidence tracking enables smart resource allocation (only validate uncertain findings with expensive fallback models)
+  - *Example:* Primary analyst extracts 5 findings with confidences [0.9, 0.85, 0.65, 0.8, 0.55]. Without confidence tracking, system either validates all 5 (wasteful) or none (risky). With tracking, only findings with confidence <0.7 trigger multi-sample check (2 out of 5), saving 60% of validation cost while focusing resources on uncertain findings.
 - **Audit Trail:** Complete state history enables debugging and compliance reporting
+  - *Example use case:* Legal team questions why bill HB-123 was scored 8/10 on legal risk. State history shows: Primary analyst extracted finding → Judge validated quotes → Multi-sample check ran (agreement: 0.92) → Rubric scoring applied with specific anchor "6-8: Major obligations". Each decision point is traceable with timestamps and intermediate outputs.
 
 **Complexity Assessment Details:**
 
