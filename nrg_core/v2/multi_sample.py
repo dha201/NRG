@@ -108,7 +108,7 @@ class MultiSampleChecker:
             requires_human_review=requires_review
         )
     
-    def _compute_consistency(self, samples: List[Dict]) -> float:
+    def _compute_consistency(self, samples: list[dict[str, Any]]) -> float:
         """
         Compute consistency score across samples using cosine similarity.
         
@@ -152,7 +152,7 @@ class MultiSampleChecker:
         
         return total_sim / count if count > 0 else 0.0
     
-    def _extract_consensus(self, samples: List[Dict]) -> List[Finding]:
+    def _extract_consensus(self, samples: list[dict[str, Any]]) -> list[Finding]:
         """
         Extract findings that appear in 2+ samples.
         
@@ -185,7 +185,7 @@ class MultiSampleChecker:
         # TODO: Implement proper clustering in production
         return all_findings
     
-    def _call_llm(self, bill_text: str, nrg_context: str, seed: int) -> Dict[str, Any]:
+    def _call_llm(self, bill_text: str, nrg_context: str, seed: int) -> dict[str, Any]:
         """
         Call LLM with specific seed for reproducibility.
         

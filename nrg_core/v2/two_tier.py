@@ -128,13 +128,15 @@ class TwoTierOrchestrator:
         )
         
         # Tier 1.5: Multi-sample check (conditional)
-        consensus_result = None
+        # Spec: Run 2-3x with different seeds, compare outputs for agreement
+        multi_sample_agreement: float | None = None
         if self.multi_sample and primary_analysis.requires_multi_sample:
             consensus_result = self.multi_sample.check_consistency(
                 bill_id=bill_id,
                 bill_text=bill_text,
                 nrg_context=nrg_context
             )
+            multi_sample_agreement = consensus_result.consistency_score
             # Use consensus findings if available
             if consensus_result.consensus_findings:
                 primary_analysis.findings = consensus_result.consensus_findings
@@ -150,15 +152,17 @@ class TwoTierOrchestrator:
             judge_validations.append(validation)
         
         # Tier 2.5: Fallback second model (conditional)
-        second_opinions = []
+        # Spec: Different provider (Claude) for architectural diversity
+        second_model_reviewed = False
         if self.fallback:
             for idx, finding in enumerate(primary_analysis.findings):
                 validation = judge_validations[idx]
                 
                 # Trigger: uncertain judge + high impact
-                if 0.6 <= validation.judge_confidence <= 0.8 and finding.impact_estimate >= 6:
-                    opinion = self.fallback.get_second_opinion(finding, bill_text)
-                    second_opinions.append((idx, opinion))
+                # Spec (Architecture_v2.md:462-463): impact >= 7 (not 6)
+                if 0.6 <= validation.judge_confidence <= 0.8 and finding.impact_estimate >= 7:
+                    self.fallback.get_second_opinion(finding, bill_text)
+                    second_model_reviewed = True
         
         # Tier 2: Rubric scoring (only for validated findings without hallucinations)
         # Why skip hallucinations: Scoring false claims wastes cost and pollutes results
@@ -233,6 +237,8 @@ class TwoTierOrchestrator:
             judge_validations=judge_validations,
             rubric_scores=rubric_scores,
             audit_trails=audit_trails,
+            multi_sample_agreement=multi_sample_agreement,
+            second_model_reviewed=second_model_reviewed,
             research_insights=research_insights,
             cross_bill_references=cross_bill_refs,
             route="ENHANCED",  # Phase 1 uses enhanced path only

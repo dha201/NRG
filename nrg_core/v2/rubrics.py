@@ -107,7 +107,7 @@ OUTPUT (JSON):
 """
 
 
-def format_rubric_scale(rubric: dict) -> str:
+def format_rubric_scale(rubric: dict[str, str]) -> str:
     """
     Format rubric dict into readable scale for prompt insertion.
     

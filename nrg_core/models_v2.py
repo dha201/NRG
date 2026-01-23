@@ -146,6 +146,8 @@ class TwoTierAnalysisResult(BaseModel):
     - judge_validations: Tier 2 validation per finding
     - rubric_scores: Scored dimensions for validated findings
     - audit_trails: Compliance-ready documentation per finding (Phase 2)
+    - multi_sample_agreement: Consistency score from Tier 1.5 (spec line 505)
+    - second_model_reviewed: Whether fallback model was used
     - research_insights: External context from deep research (Phase 4)
     - cross_bill_references: Detected statutory references (Phase 4)
     - route: Whether STANDARD or ENHANCED path was used
@@ -160,6 +162,14 @@ class TwoTierAnalysisResult(BaseModel):
     audit_trails: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="Audit trails per finding for compliance (Phase 2)"
+    )
+    multi_sample_agreement: Optional[float] = Field(
+        default=None,
+        description="Consistency score from Tier 1.5 multi-sample check (0-1)"
+    )
+    second_model_reviewed: bool = Field(
+        default=False,
+        description="Whether fallback second model was consulted"
     )
     research_insights: List[ResearchInsight] = Field(
         default_factory=list,
