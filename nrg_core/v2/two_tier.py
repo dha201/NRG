@@ -26,6 +26,7 @@ from nrg_core.v2.primary_analyst import PrimaryAnalyst
 from nrg_core.v2.judge import JudgeModel
 from nrg_core.v2.rubrics import LEGAL_RISK_RUBRIC, FINANCIAL_IMPACT_RUBRIC
 from nrg_core.v2.multi_sample import MultiSampleChecker, ConsensusResult
+from nrg_core.v2.fallback import FallbackAnalyst
 from nrg_core.models_v2 import TwoTierAnalysisResult, RubricScore
 
 
@@ -52,7 +53,8 @@ class TwoTierOrchestrator:
         judge_model: str = "gpt-4o",
         primary_api_key: str = None,
         judge_api_key: str = None,
-        enable_multi_sample: bool = True
+        enable_multi_sample: bool = True,
+        enable_fallback: bool = True
     ):
         """
         Initialize orchestrator with analyst and judge.
@@ -63,6 +65,7 @@ class TwoTierOrchestrator:
             primary_api_key: API key for primary analyst
             judge_api_key: API key for judge (can be same as primary)
             enable_multi_sample: Enable multi-sample consistency check
+            enable_fallback: Enable fallback second model
         """
         self.primary_analyst = PrimaryAnalyst(
             model=primary_model,
@@ -73,6 +76,7 @@ class TwoTierOrchestrator:
             api_key=judge_api_key
         )
         self.multi_sample = MultiSampleChecker(model=primary_model, api_key=primary_api_key) if enable_multi_sample else None
+        self.fallback = FallbackAnalyst(api_key=primary_api_key) if enable_fallback else None
     
     def analyze(
         self,
@@ -124,6 +128,17 @@ class TwoTierOrchestrator:
                 bill_text=bill_text
             )
             judge_validations.append(validation)
+        
+        # Tier 2.5: Fallback second model (conditional)
+        second_opinions = []
+        if self.fallback:
+            for idx, finding in enumerate(primary_analysis.findings):
+                validation = judge_validations[idx]
+                
+                # Trigger: uncertain judge + high impact
+                if 0.6 <= validation.judge_confidence <= 0.8 and finding.impact_estimate >= 6:
+                    opinion = self.fallback.get_second_opinion(finding, bill_text)
+                    second_opinions.append((idx, opinion))
         
         # Tier 2: Rubric scoring (only for validated findings without hallucinations)
         # Why skip hallucinations: Scoring false claims wastes cost and pollutes results
