@@ -22,7 +22,8 @@ Why This Matters:
 """
 from typing import Dict, Any
 from openai import OpenAI
-from nrg_core.models_v2 import Finding, JudgeValidation
+from nrg_core.models_v2 import Finding, JudgeValidation, RubricScore, Quote
+from nrg_core.v2.rubrics import RUBRIC_SCORING_PROMPT, format_rubric_scale
 
 
 # Prompt for validation - emphasizes verbatim matching and hallucination detection
@@ -127,24 +128,89 @@ class JudgeModel:
         bill_text: str,
         nrg_context: str,
         rubric_anchors: Dict[str, str]
-    ) -> Dict[str, Any]:
+    ) -> RubricScore:
         """
         Score a finding on a rubric dimension.
         
-        Placeholder - implemented in Task 5 (Rubric Scoring).
+        Uses LLM to score finding against defined rubric anchors.
+        Returns structured RubricScore with full audit trail.
         
         Args:
             dimension: "legal_risk" or "financial_impact"
             finding: Finding to score
             bill_text: Full bill text
-            nrg_context: NRG business context
-            rubric_anchors: Scale definitions
+            nrg_context: NRG business context for impact calculation
+            rubric_anchors: Scale definitions (e.g., LEGAL_RISK_RUBRIC)
         
         Returns:
-            Dict with score, rationale, evidence, rubric_anchor
+            RubricScore with score, rationale, evidence, anchor
         """
-        # Will implement in Task 5
-        pass
+        # Call LLM for rubric scoring
+        score_output = self._call_llm_for_rubric(
+            dimension=dimension,
+            finding=finding,
+            bill_text=bill_text,
+            nrg_context=nrg_context,
+            rubric_anchors=rubric_anchors
+        )
+        
+        return RubricScore(
+            dimension=score_output["dimension"],
+            score=score_output["score"],
+            rationale=score_output["rationale"],
+            evidence=[Quote(**q) for q in score_output["evidence"]],
+            rubric_anchor=score_output["rubric_anchor"]
+        )
+    
+    def _call_llm_for_rubric(
+        self,
+        dimension: str,
+        finding: Finding,
+        bill_text: str,
+        nrg_context: str,
+        rubric_anchors: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """
+        Call OpenAI for rubric scoring.
+        
+        Args:
+            dimension: Rubric dimension to score
+            finding: Finding to score
+            bill_text: Full bill text
+            nrg_context: NRG business context
+            rubric_anchors: Scale definitions
+            
+        Returns:
+            Parsed JSON with score, rationale, evidence, anchor
+            
+        Raises:
+            ValueError: If client not initialized
+        """
+        if not self.client:
+            raise ValueError("OpenAI client not initialized")
+        
+        # Format quotes and rubric scale for prompt
+        quotes_text = "\n".join([f"- {q.text} (Section {q.section})" for q in finding.quotes])
+        rubric_scale = format_rubric_scale(rubric_anchors)
+        
+        prompt = RUBRIC_SCORING_PROMPT.format(
+            dimension=dimension,
+            rubric_scale=rubric_scale,
+            nrg_context=nrg_context,
+            bill_text=bill_text[:5000],  # Truncate to avoid token limits
+            statement=finding.statement,
+            quotes=quotes_text
+        )
+        
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.1  # Low temperature for consistent scoring
+        )
+        
+        import json
+        return json.loads(response.choices[0].message.content)
     
     def _call_llm(self, finding: Finding, bill_text: str) -> Dict[str, Any]:
         """
