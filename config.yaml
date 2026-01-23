@@ -1,178 +1,222 @@
-# NRG Energy Legislative Intelligence POC Configuration
-# This file controls LLM providers, data sources, and change tracking behavior
+# NRG Legislative Intelligence - Configuration
+# Shared config for POC 2 and V2 pipelines
 
-# =============================================================================
-# Debug Logging Configuration
-# =============================================================================
+# ============================================================================
+# LOGGING & DEBUGGING
+# ============================================================================
+logging:
+  # Verbosity levels: quiet, normal, verbose, debug
+  level: normal
+
+  # Show detailed traces for each pipeline stage
+  trace:
+    sequential_evolution: true    # Show version-by-version analysis
+    two_tier_validation: true     # Show judge validation decisions
+    rubric_scoring: true          # Show per-dimension scoring rationale
+    hallucination_detection: true # Explain why findings were flagged
+    stability_analysis: true      # Show stability score calculations
+
+  # Output formatting
+  format:
+    show_timestamps: true
+    show_token_counts: true
+    show_cost_estimates: true
+    use_colors: true
+
+# Legacy debug flags (for POC 2 compatibility)
 debug:
   enabled: true
-  
-  # Debug options
-  api_order: true          # Show API version order from Open States/Congress
-  analysis_order: true     # Show version_analyses order before selection
-  llm_calls: false         # Show LLM request/response details
-  llm_responses: false     # Show detailed LLM response parsing (extract_json, version_changes)
-  change_detection: false  # Show hash comparisons and change detection logic
+  api_order: true
+  analysis_order: true
+  llm_calls: false
+  llm_responses: false
+  change_detection: false
 
-# =============================================================================
-# LLM Provider Configuration
-# =============================================================================
+# ============================================================================
+# LLM CONFIGURATION
+# ============================================================================
 llm:
-  # Active provider: "gemini" or "openai"
-  provider: "gemini"
-  #provider: "openai"
+  # Primary provider: gemini, openai, anthropic
+  provider: gemini
 
-  # OpenAI Configuration (GPT-5)
   openai:
-    api_key_env: "OPENAI_API_KEY"
-    model: "gpt-5"
-    reasoning_effort: "medium"  # low, medium, high
-    verbosity: "high"           # low, medium, high
+    api_key_env: OPENAI_API_KEY
+    model: gpt-5
+    reasoning_effort: medium
+    verbosity: high
 
-  # Google Gemini Configuration
   gemini:
-    api_key_env: "GOOGLE_API_KEY"
-    model: "gemini-3-pro-preview"
-    temperature: 0.2            # 0.0 (deterministic) to 1.0 (creative)
+    api_key_env: GOOGLE_API_KEY
+    model: gemini-3-pro-preview
+    temperature: 0.2
     max_output_tokens: 8192
-    # Note: Gemini doesn't have reasoning_effort/verbosity parameters
-    # Control verbosity through system instructions in prompt
 
-# =============================================================================
-# Data Sources Configuration
-# =============================================================================
+  anthropic:
+    api_key_env: ANTHROPIC_API_KEY
+    model: claude-sonnet-4-20250514
+
+# ============================================================================
+# V2 PIPELINE CONFIGURATION
+# ============================================================================
+v2:
+  # Orchestration settings
+  orchestration:
+    # Route bills based on complexity score
+    complexity_thresholds:
+      standard_max: 2      # 0-2 points → STANDARD route
+      enhanced_min: 3      # 3+ points → ENHANCED route
+
+    # Complexity scoring weights
+    scoring:
+      pages_20_50: 1       # 20-50 pages
+      pages_over_50: 2     # >50 pages
+      versions_2_5: 1      # 2-5 versions
+      versions_over_5: 2   # >5 versions
+      domain_environmental: 1
+      domain_energy_tax: 2
+
+  # Sequential Evolution settings
+  sequential_evolution:
+    enabled: true
+    max_memory_tokens: 2000
+    extract_quotes: true
+    track_modifications: true
+
+  # Two-Tier Validation settings
+  two_tier:
+    enabled: true
+
+    # Tier 1.5: Multi-sample check
+    multi_sample:
+      enabled: true
+      samples: 3
+      agreement_threshold: 0.85
+      # Only trigger if impact >= threshold OR confidence < threshold
+      impact_trigger: 6
+      confidence_trigger: 0.7
+
+    # Tier 2: Judge validation
+    judge:
+      enabled: true
+      verify_quotes: true
+      detect_hallucinations: true
+
+    # Tier 2.5: Fallback model
+    fallback:
+      enabled: true
+      # Only trigger if judge confidence in range AND impact >= threshold
+      confidence_range: [0.6, 0.8]
+      impact_threshold: 7
+      provider: anthropic  # Use different provider than primary
+
+  # Rubric scoring settings
+  rubric_scoring:
+    enabled: true
+    dimensions:
+      - legal_risk
+      - financial_impact
+      - operational_disruption
+      - ambiguity_risk
+    # Score anchors (0-10 scale)
+    anchors:
+      low: [0, 2]
+      medium: [3, 5]
+      high: [6, 8]
+      critical: [9, 10]
+
+# ============================================================================
+# DATA SOURCES
+# ============================================================================
 sources:
-  # Congress.gov - Federal legislation
   congress:
     enabled: true
-    limit: 3  # Number of bills to fetch per run
+    limit: 3
 
-  # Regulations.gov - Federal regulations
   regulations:
     enabled: true
-    limit: 3  # Number of regulations to fetch per run
-
-  # LegiScan - DEPRECATED (replaced by Open States)
-  # Kept as backup fallback in case Open States is unavailable
-  legiscan_federal:
-    enabled: false  # Disabled - using Open States instead
     limit: 3
-    state: "US"
 
-  # Open States API - State and federal legislation (ACTIVE)
+  legiscan_federal:
+    enabled: false
+    limit: 3
+    state: US
+
   openstates:
     enabled: true
-    api_key_env: "OPENSTATES_API_KEY"
-
-    # Federal bills (replaces legiscan_federal)
+    api_key_env: OPENSTATES_API_KEY
     federal:
-      enabled: false  # Disabled for now - using Congress.gov for federal
-      jurisdiction: "US"
+      enabled: false
+      jurisdiction: US
       limit: 3
-      search_query: "oil and gas"
-
-    # Texas State Bills (replaces texas_bills via LegiScan)
+      search_query: oil and gas
     texas_bills:
       enabled: true
-      jurisdiction: "TX"
-      # Specific bill numbers to monitor (89th Legislature - 2025)
-      # REDUCED TO 2 BILLS WITH MULTIPLE VERSIONS - Full list backed up in config.yaml.backup.17bills
-      # HB4238 has 5 versions: Introduced, House Committee Report, Engrossed, Senate Committee Report, Enrolled
-      # HB391 has 3 versions: Introduced, House Committee Report, Engrossed
+      jurisdiction: TX
       bills:
-        - "HB4238"
-        - "HB391"
-      # Optional: additional search query
-      # search_query: "oil and gas"
-      # search_limit: 5
+        - HB4238
+        - HB391
 
-# =============================================================================
-# Change Tracking Configuration
-# =============================================================================
+# ============================================================================
+# CHANGE TRACKING
+# ============================================================================
 change_tracking:
   enabled: true
-
-  # SQLite database for caching bill data
-  database: "bill_cache.db"
-
-  # What types of changes to track
-  track_text_changes: true      # Detect bill text modifications
-  track_amendments: true         # Track new amendments
-  track_status_changes: true     # Track bill status updates (Introduced → Passed)
-
-  # Use LLM to analyze impact of detected changes
+  database: bill_cache.db
+  track_text_changes: true
+  track_amendments: true
+  track_status_changes: true
   analyze_changes_with_llm: true
+  min_check_interval_hours: 0
 
-  # Minimum time between checks (to avoid excessive API calls)
-  # Format: hours (e.g., 24 = once per day)
-  min_check_interval_hours: 0  # 0 = check every run
-
-# =============================================================================
-# Bill Version Tracking Configuration
-# =============================================================================
+# ============================================================================
+# VERSION TRACKING
+# ============================================================================
 version_tracking:
   enabled: true
-
-  # Fetch all versions of each bill (Introduced, Committee Reports, Enrolled, etc.)
   fetch_all_versions: true
-
-  # Analyze each version independently with LLM
-  # Set to false to only analyze final version
   analyze_all_versions: true
-
-  # Generate version comparison diffs between consecutive versions
   compare_versions: true
-
-  # Include version timeline in reports
   include_version_timeline_in_reports: true
-
-  # Sources to fetch versions from
-  # Note: Open States has full version support
-  # Congress.gov support is now implemented and tested
-  # Regulations.gov lacks native version support (no version history in API)
   sources:
-    openstates: true      # Texas and other state bills
-    congress: true        # Federal bills - NOW ACTIVE
-    regulations: false    # Federal regulations (no version history in API)
+    openstates: true
+    congress: true
+    regulations: false
 
-# =============================================================================
-# Output Configuration
-# =============================================================================
+# ============================================================================
+# OUTPUT & REPORTS
+# ============================================================================
 output:
-  # Include change history in reports
+  # Output directory for reports
+  directory: ./reports
+
+  # Report formats to generate
+  formats:
+    json: true
+    markdown: true
+    docx: true
+    pdf: false  # Requires wkhtmltopdf or weasyprint
+
+  # Report content options
   include_change_summary: true
-
-  # Include amendment details in reports
   include_amendments: true
-
-  # Highlight changes in console output
   highlight_changes: true
+  include_audit_trail: true
+  include_rubric_details: true
 
-  # Generate Word documents (requires pandoc)
-  generate_docx: true
-
-# =============================================================================
-# Deep Research Configuration (Gemini Deep Research Agent)
-# =============================================================================
+# ============================================================================
+# DEEP RESEARCH (Optional)
+# ============================================================================
 deep_research:
-  # Enable Deep Research for comprehensive bill analysis
-  enabled: false  # Set to true to use Deep Research instead of standard LLM
-  
-  # Agent configuration
-  agent: "deep-research-pro-preview-12-2025"
-  
-  # Polling configuration
-  poll_interval: 10     # Seconds between status checks
-  max_wait: 3600        # Maximum wait time (60 minutes)
-  
-  # Cost estimates per task: $2-5 depending on complexity
-  # ~80-160 search queries, ~250k-900k input tokens, ~60-80k output tokens
+  enabled: false
+  agent: deep-research-pro-preview-12-2025
+  poll_interval: 10
+  max_wait: 3600
 
-# =============================================================================
-# API Rate Limiting (optional - for future use)
-# =============================================================================
+# ============================================================================
+# RATE LIMITING
+# ============================================================================
 rate_limiting:
-  # Delay between API calls (seconds)
   congress_delay: 0.5
   regulations_delay: 0.5
   legiscan_delay: 0.5
+  openstates_delay: 0.5
