@@ -235,22 +235,51 @@ class MultiSampleChecker:
         return consensus_findings
 
     def _deduplicate_findings(self, findings: List[Finding]) -> List[Finding]:
-        """Remove duplicate findings based on statement similarity."""
-        if not findings:
+        """Remove duplicate findings based on semantic similarity.
+
+        Uses TF-IDF + cosine similarity to detect semantically equivalent findings.
+        Threshold: 0.85 similarity = same finding.
+
+        Args:
+            findings: List of findings to deduplicate
+
+        Returns:
+            Deduplicated findings (keeps first occurrence)
+        """
+        if not findings or len(findings) <= 1:
             return findings
 
-        seen_statements = set()
-        unique_findings = []
+        # Extract statements for vectorization
+        statements = [f.statement for f in findings]
 
-        for finding in findings:
-            # Normalize statement for comparison
-            normalized = finding.statement.lower().strip()
-            # Simple dedup: exact match after normalization
-            if normalized not in seen_statements:
-                seen_statements.add(normalized)
-                unique_findings.append(finding)
+        # Compute TF-IDF vectors
+        vectorizer = TfidfVectorizer()
+        try:
+            vectors = vectorizer.fit_transform(statements)
+        except ValueError:
+            # Empty vocabulary - return as-is
+            return findings
 
-        return unique_findings
+        # Compute pairwise cosine similarities
+        similarities = cosine_similarity(vectors)
+
+        # Track which findings to keep (first occurrence in each cluster)
+        unique_indices = []
+        seen = set()
+
+        for i in range(len(findings)):
+            if i in seen:
+                continue
+
+            # Keep this finding
+            unique_indices.append(i)
+
+            # Mark all similar findings as seen
+            for j in range(i + 1, len(findings)):
+                if similarities[i][j] >= 0.85:  # Similarity threshold
+                    seen.add(j)
+
+        return [findings[i] for i in unique_indices]
     
     def _call_llm(self, bill_text: str, nrg_context: str, seed: int) -> dict[str, Any]:
         """
