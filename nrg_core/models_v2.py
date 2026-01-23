@@ -115,6 +115,28 @@ class JudgeValidation(BaseModel):
     judge_confidence: float = Field(..., ge=0.0, le=1.0, description="Judge's confidence 0-1")
 
 
+class ResearchInsight(BaseModel):
+    """
+    External research insight from deep research agent (Phase 4).
+    
+    Captures external context that enriches analysis:
+    - claim: What the research found
+    - source_url: Where it came from (for citation)
+    - snippet: Relevant excerpt from source
+    - relevance: How relevant to the finding ("high", "medium", "low")
+    - checker_validated: Whether checker agent confirmed the claim
+    - trust: Confidence in the research (0-1)
+    
+    Design: Separate model enables filtering by trust/validation status.
+    """
+    claim: str = Field(..., description="Research claim or insight")
+    source_url: str = Field(..., description="Source URL for citation")
+    snippet: str = Field(..., description="Relevant excerpt from source")
+    relevance: str = Field(..., description="Relevance level: high, medium, low")
+    checker_validated: bool = Field(default=False, description="Validated by checker agent")
+    trust: float = Field(default=0.0, ge=0.0, le=1.0, description="Trust score 0-1")
+
+
 class TwoTierAnalysisResult(BaseModel):
     """
     Complete output from two-tier analysis pipeline.
@@ -124,6 +146,8 @@ class TwoTierAnalysisResult(BaseModel):
     - judge_validations: Tier 2 validation per finding
     - rubric_scores: Scored dimensions for validated findings
     - audit_trails: Compliance-ready documentation per finding (Phase 2)
+    - research_insights: External context from deep research (Phase 4)
+    - cross_bill_references: Detected statutory references (Phase 4)
     - route: Whether STANDARD or ENHANCED path was used
     - cost_estimate: LLM API cost for tracking
     
@@ -136,6 +160,14 @@ class TwoTierAnalysisResult(BaseModel):
     audit_trails: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="Audit trails per finding for compliance (Phase 2)"
+    )
+    research_insights: List[ResearchInsight] = Field(
+        default_factory=list,
+        description="External research insights (Phase 4)"
+    )
+    cross_bill_references: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Detected cross-bill references (Phase 4)"
     )
     route: Literal["STANDARD", "ENHANCED"] = Field(default="STANDARD")
     cost_estimate: float = Field(default=0.0, description="Total LLM cost in USD")
