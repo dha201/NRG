@@ -15,9 +15,12 @@ from nrg_core.models_v2 import TwoTierAnalysisResult
 
 def test_two_tier_orchestrator_full_pipeline():
     """Integration test: orchestrator runs primary analyst → judge validation → rubric scoring."""
+    # Disable multi_sample and fallback to avoid real API calls in unit test
     orchestrator = TwoTierOrchestrator(
         primary_api_key="test-primary",
-        judge_api_key="test-judge"
+        judge_api_key="test-judge",
+        enable_multi_sample=False,
+        enable_fallback=False
     )
     
     bill_text = """
@@ -66,9 +69,28 @@ def test_two_tier_orchestrator_full_pipeline():
         "rubric_anchor": "6-8: $500K-$5M material to P&L"
     }
     
+    # Phase 2: Added operational_disruption and ambiguity_risk
+    mock_operational_score = {
+        "dimension": "operational_disruption",
+        "score": 4,
+        "rationale": "Requires process adjustments for tax calculation and reporting procedures.",
+        "evidence": [{"text": "Annual tax of $50 per megawatt", "section": "2.1", "page": None}],
+        "rubric_anchor": "3-5: Process adjustments"
+    }
+    
+    mock_ambiguity_score = {
+        "dimension": "ambiguity_risk",
+        "score": 3,
+        "rationale": "Language is mostly clear but 'fossil fuel facilities' definition needs regulatory guidance.",
+        "evidence": [{"text": "fossil fuel facilities >50MW", "section": "2.1", "page": None}],
+        "rubric_anchor": "3-5: Some ambiguity"
+    }
+    
     with patch.object(orchestrator.primary_analyst, '_call_llm', return_value=mock_primary_findings), \
          patch.object(orchestrator.judge, '_call_llm', return_value=mock_judge_validation), \
-         patch.object(orchestrator.judge, '_call_llm_for_rubric', side_effect=[mock_legal_score, mock_financial_score]):
+         patch.object(orchestrator.judge, '_call_llm_for_rubric', side_effect=[
+             mock_legal_score, mock_financial_score, mock_operational_score, mock_ambiguity_score
+         ]):
         
         result = orchestrator.analyze(
             bill_id="HB123",
@@ -79,17 +101,24 @@ def test_two_tier_orchestrator_full_pipeline():
     assert isinstance(result, TwoTierAnalysisResult)
     assert len(result.primary_analysis.findings) == 1
     assert len(result.judge_validations) == 1
-    assert len(result.rubric_scores) == 2  # legal_risk + financial_impact
+    assert len(result.rubric_scores) == 4  # Phase 2: all 4 dimensions
     assert result.judge_validations[0].quote_verified is True
-    assert result.rubric_scores[0].dimension == "legal_risk"
-    assert result.rubric_scores[1].dimension == "financial_impact"
+    # Verify all 4 dimensions are scored
+    scored_dims = {s.dimension for s in result.rubric_scores}
+    assert scored_dims == {"legal_risk", "financial_impact", "operational_disruption", "ambiguity_risk"}
+    # Verify audit trails are generated (Phase 2)
+    assert len(result.audit_trails) == 1
+    assert "quotes_used" in result.audit_trails[0]
 
 
 def test_two_tier_skips_rubric_scoring_for_hallucinations():
     """Findings with hallucinations should not be scored on rubrics."""
+    # Disable multi_sample and fallback to avoid real API calls in unit test
     orchestrator = TwoTierOrchestrator(
         primary_api_key="test-primary",
-        judge_api_key="test-judge"
+        judge_api_key="test-judge",
+        enable_multi_sample=False,
+        enable_fallback=False
     )
     
     mock_primary_findings = {

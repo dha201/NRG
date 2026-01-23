@@ -35,6 +35,38 @@ FINANCIAL_IMPACT_RUBRIC = {
 }
 
 
+# Operational Disruption Rubric - Degree of operational changes required
+# Design: Scales from no change to business model transformation
+# Why separate from financial: Some changes are costly in effort/time, not just dollars
+OPERATIONAL_DISRUPTION_RUBRIC = {
+    "0-2": "No operational changes required",
+    "3-5": "Process adjustments - training, reporting procedures",
+    "6-8": "System changes - hiring, infrastructure, restructuring",
+    "9-10": "Business model changes - asset divestitures, strategic pivots"
+}
+
+
+# Ambiguity Risk Rubric - Clarity of legislative language
+# Design: Measures interpretation uncertainty and regulatory guidance needs
+# Why this matters: Ambiguous bills create compliance risk even if text seems benign
+AMBIGUITY_RISK_RUBRIC = {
+    "0-2": "Clear, explicit language - no interpretation needed",
+    "3-5": "Some ambiguity - interpretations clear from context",
+    "6-8": "Significant ambiguity - regulatory guidance TBD",
+    "9-10": "Vague, contradictory - novel legal concepts, high uncertainty"
+}
+
+
+# All rubrics consolidated for easy iteration
+# Design: Dict allows dynamic scoring loop without hardcoding dimension names
+ALL_RUBRICS = {
+    "legal_risk": LEGAL_RISK_RUBRIC,
+    "financial_impact": FINANCIAL_IMPACT_RUBRIC,
+    "operational_disruption": OPERATIONAL_DISRUPTION_RUBRIC,
+    "ambiguity_risk": AMBIGUITY_RISK_RUBRIC
+}
+
+
 # Prompt template for rubric scoring
 # Design: Explicit requirements prevent common scoring errors:
 # - "using the rubric scale above" anchors to defined thresholds

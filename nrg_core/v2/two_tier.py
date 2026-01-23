@@ -24,9 +24,10 @@ Why This Structure:
 from typing import List
 from nrg_core.v2.primary_analyst import PrimaryAnalyst
 from nrg_core.v2.judge import JudgeModel
-from nrg_core.v2.rubrics import LEGAL_RISK_RUBRIC, FINANCIAL_IMPACT_RUBRIC
+from nrg_core.v2.rubrics import ALL_RUBRICS
 from nrg_core.v2.multi_sample import MultiSampleChecker, ConsensusResult
 from nrg_core.v2.fallback import FallbackAnalyst
+from nrg_core.v2.audit_trail import AuditTrailGenerator
 from nrg_core.models_v2 import TwoTierAnalysisResult, RubricScore
 
 
@@ -77,6 +78,7 @@ class TwoTierOrchestrator:
         )
         self.multi_sample = MultiSampleChecker(model=primary_model, api_key=primary_api_key) if enable_multi_sample else None
         self.fallback = FallbackAnalyst(api_key=primary_api_key) if enable_fallback else None
+        self.audit_generator = AuditTrailGenerator()
     
     def analyze(
         self,
@@ -150,11 +152,8 @@ class TwoTierOrchestrator:
             if validation.hallucination_detected:
                 continue
             
-            # Score on both dimensions
-            for dimension, rubric in [
-                ("legal_risk", LEGAL_RISK_RUBRIC),
-                ("financial_impact", FINANCIAL_IMPACT_RUBRIC)
-            ]:
+            # Score on all 4 dimensions (Phase 2: added operational_disruption, ambiguity_risk)
+            for dimension, rubric in ALL_RUBRICS.items():
                 score = self.judge.score_rubric(
                     dimension=dimension,
                     finding=finding,
@@ -164,11 +163,21 @@ class TwoTierOrchestrator:
                 )
                 rubric_scores.append(score)
         
+        # Phase 2: Generate audit trails for compliance documentation
+        # Why batch generation: Efficient handling of multiple findings with their scores
+        audit_trails = self.audit_generator.generate_batch(
+            findings=primary_analysis.findings,
+            validations=judge_validations,
+            all_rubric_scores=rubric_scores,
+            dimensions_per_finding=len(ALL_RUBRICS)  # 4 dimensions
+        )
+        
         return TwoTierAnalysisResult(
             bill_id=bill_id,
             primary_analysis=primary_analysis,
             judge_validations=judge_validations,
             rubric_scores=rubric_scores,
+            audit_trails=audit_trails,
             route="ENHANCED",  # Phase 1 uses enhanced path only
             cost_estimate=0.0  # TODO: Track actual API costs in Phase 2
         )

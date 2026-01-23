@@ -68,7 +68,9 @@ class RubricScore(BaseModel):
     Phase 1 dimensions: legal_risk, financial_impact
     Phase 2 adds: operational_complexity, ambiguity
     """
-    dimension: Literal["legal_risk", "financial_impact"] = Field(..., description="Rubric dimension")
+    dimension: Literal["legal_risk", "financial_impact", "operational_disruption", "ambiguity_risk"] = Field(
+        ..., description="Rubric dimension - 4 dimensions in Phase 2"
+    )
     score: int = Field(..., ge=0, le=10, description="Score 0-10")
     rationale: str = Field(..., min_length=50, description="Detailed explanation")
     evidence: List[Quote] = Field(default_factory=list, description="Supporting evidence")
@@ -121,6 +123,7 @@ class TwoTierAnalysisResult(BaseModel):
     - primary_analysis: Tier 1 findings
     - judge_validations: Tier 2 validation per finding
     - rubric_scores: Scored dimensions for validated findings
+    - audit_trails: Compliance-ready documentation per finding (Phase 2)
     - route: Whether STANDARD or ENHANCED path was used
     - cost_estimate: LLM API cost for tracking
     
@@ -130,5 +133,9 @@ class TwoTierAnalysisResult(BaseModel):
     primary_analysis: PrimaryAnalysis
     judge_validations: List[JudgeValidation] = Field(default_factory=list)
     rubric_scores: List[RubricScore] = Field(default_factory=list)
+    audit_trails: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Audit trails per finding for compliance (Phase 2)"
+    )
     route: Literal["STANDARD", "ENHANCED"] = Field(default="STANDARD")
     cost_estimate: float = Field(default=0.0, description="Total LLM cost in USD")
