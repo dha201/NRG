@@ -64,20 +64,32 @@ EVOLUTION_PROMPT_V1 = """Analyze this bill (Version 1: {version_name}).
 BILL TEXT:
 {bill_text}
 
-Extract findings and assign IDs (F1, F2, etc.).
+Extract findings that could impact NRG Energy's business.
+Assign IDs (F1, F2, etc.) and include supporting quotes from the bill.
+
+REQUIREMENTS:
+1. Each finding MUST have at least one verbatim quote from the bill
+2. Include the section reference for each quote
+3. Estimate impact 0-10 (0=no impact, 10=existential threat)
 
 OUTPUT (JSON):
 {{
   "findings": [
     {{
       "id": "F1",
-      "statement": "...",
+      "statement": "Clear, specific finding statement",
+      "quotes": [
+        {{"text": "Exact verbatim quote from bill", "section": "2.1"}}
+      ],
       "origin_version": 1,
       "affected_sections": ["2.1"],
-      "modification_count": 0
+      "modification_count": 0,
+      "impact_estimate": 7
     }}
   ]
-}}"""
+}}
+
+CRITICAL: Every statement must be supported by a direct quote from the bill."""
 
 EVOLUTION_PROMPT_VN = """Analyze Version {version_number}: {version_name}.
 
@@ -91,19 +103,26 @@ TASK:
 1. Compare to previous findings
 2. Mark findings as: STABLE (unchanged), MODIFIED (changed), or NEW
 3. Update modification counts
+4. Update quotes if text changed
 
 OUTPUT (JSON):
 {{
   "findings": [
     {{
-      "id": "F1",  // existing ID if stable/modified, new ID if new
-      "statement": "...",
+      "id": "F1",
+      "statement": "Clear, specific finding statement",
+      "quotes": [
+        {{"text": "Exact verbatim quote from bill", "section": "2.1"}}
+      ],
       "origin_version": 1,
-      "modification_count": 1,  // increment if modified
-      "status": "MODIFIED"
+      "modification_count": 1,
+      "status": "MODIFIED",
+      "impact_estimate": 7
     }}
   ]
-}}"""
+}}
+
+CRITICAL: Every statement must be supported by a direct quote from the bill."""
 
 
 class SequentialEvolutionAgent:
