@@ -459,7 +459,7 @@ The following diagram shows how the orchestration layer coordinates all analysis
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 1: API CALL (Congress.gov / OpenStates)                   │
+│ API CALL (Congress.gov / OpenStates)                            │
 │                                                                 │
 │    Input: Bill ID (e.g., "HR-1234")                             │
 │    Output:                                                      │
@@ -468,13 +468,13 @@ The following diagram shows how the orchestration layer coordinates all analysis
 │      - bill_text: Full text of each version                     │
 │                                                                 │
 │    Decision: Has multiple versions?                             │
-│      YES → Continue to Stage 2                                  │
-│      NO  → Skip to Stage 3 (single-version analysis)            │
+│      YES → Continue to Stage 1                                  │
+│      NO  → Skip to Stage 2 (single-version analysis)            │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 2: SEQUENTIAL EVOLUTION (Primary Extraction)             │
+│ STAGE 1: SEQUENTIAL EVOLUTION (Primary Extraction)             │
 │                                                                 │
 │    Extract findings from ALL versions, track evolution │
 │                                                                 │
@@ -508,15 +508,15 @@ The following diagram shows how the orchestration layer coordinates all analysis
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 3: TWO-TIER VALIDATION (on latest version findings)       │
+│ STAGE 2: TWO-TIER VALIDATION (on latest version findings)       │
 │                                                                 │
 │    Validate extracted findings, filter hallucinations           │
 │                                                                 │
-│    Input: findings_registry from Stage 2 (latest state)         │
+│    Input: findings_registry from Stage 1 (latest state)         │
 │                                                                 │
 │    Process:                                                     │
 │      Tier 1 (Primary Analyst):                                  │
-│        → Already done in Stage 2 (extraction complete)          │
+│        → Already done in Stage 1 (extraction complete)          │
 │                                                                 │
 │      Tier 1.5 (Multi-Sample Check) - if needed:                 │
 │        → Re-run extraction 2-3x with different prompts          │
@@ -540,11 +540,11 @@ The following diagram shows how the orchestration layer coordinates all analysis
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 4: RUBRIC SCORING                                         │
+│ STAGE 3: RUBRIC SCORING                                         │
 │                                                                 │
 │    Purpose: Score validated findings on business impact         │
 │                                                                 │
-│    Input: validated_findings from Stage 3                       │
+│    Input: validated_findings from Stage 2                       │
 │                                                                 │
 │    Process:                                                     │
 │      For each finding, score on 4 dimensions:                   │
@@ -562,7 +562,7 @@ The following diagram shows how the orchestration layer coordinates all analysis
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 5: OUTPUT & PREDICTIONS                                   │
+│ STAGE 4: OUTPUT & PREDICTIONS                                   │
 │                                                                 │
 │    Final output to legal/compliance team:                       │
 │                                                                 │
@@ -576,12 +576,12 @@ The following diagram shows how the orchestration layer coordinates all analysis
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 6: INCREMENTAL UPDATE (when new version detected)        │
+│ STAGE 5: INCREMENTAL UPDATE (when new version detected)        │
 │                                                                 │
 │    Trigger: Polling detects v4 added to bill                    │
 │                                                                 │
 │    Process:                                                     │
-│      → Load existing findings_registry from Stage 2             │
+│      → Load existing findings_registry from Stage 1             │
 │      → Run Sequential Evolution on v4 ONLY (not v1-v3 again)    │
 │      → Compare v4 to memory, update findings                    │
 │      → Re-validate if findings changed significantly            │
@@ -617,11 +617,11 @@ The following diagram shows how the orchestration layer coordinates all analysis
 *Scenario:* Energy Tax Bill HR-1234 has 3 versions.
 
 ```
-STAGE 1: API Call
+API Call
   → GET /bills/HR-1234
   → Response: {versions: [v1, v2, v3], status: "Enrolled"}
 
-STAGE 2: Sequential Evolution
+STAGE 1: Sequential Evolution
   v1 (Introduced):
     F1: "Tax of $50/MW applies to facilities >50MW"
     F2: "Applies to natural gas facilities"
@@ -643,19 +643,19 @@ STAGE 2: Sequential Evolution
     }
     stability_scores = {F1: 0.85, F3: 0.70}
 
-STAGE 3: Two-Tier Validation
+STAGE 2: Two-Tier Validation
   F1: Judge validates → confidence 0.92 (quote found in Section 2.1)
   F3: Judge validates → confidence 0.88 (quote found in Section 4.3)
   
   Output: Both findings validated, no hallucinations detected
 
-STAGE 4: Rubric Scoring
+STAGE 3: Rubric Scoring
   F1 ("Tax >100MW"):
     legal_risk: 7, financial_impact: 8, operational: 4, ambiguity: 3
   F3 ("Renewables exempt"):
     legal_risk: 3, financial_impact: 6, operational: 2, ambiguity: 5
   
-STAGE 5: Output
+STAGE 4: Output
   Alert to Legal Team:
     "HR-1234 Enrolled - 2 findings affecting NRG operations"
     
@@ -670,7 +670,7 @@ STAGE 5: Output
       Stability: 70% (added late, watch for changes)
       ⚠️ WATCH: Late addition may be modified
 
-STAGE 6: Later - v4 Detected
+STAGE 5: Later - v4 Detected
   Polling finds v4 (Conference Report) added
   
   Incremental update:
