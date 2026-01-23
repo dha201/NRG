@@ -397,48 +397,43 @@ The orchestrator maintains three state registries:
 
 **Example: Why Single Source of Truth Matters**
 
-**The Problem:** Bill text says "facilities exceeding 50 megawatts" (unambiguous). But LLMs have variability—running the same extraction twice can produce different interpretations.
+*The Problem:* LLMs have inherent variability - running the same prompt on the same text can produce different outputs. Without centralized state, each stage independently calls the LLM, creating conflicting extractions.
 
-*Without centralized state (❌ broken):*
+*Without centralized state:*
 ```
 Stage 1 (Two-Tier Analysis):
-  LLM reads: "facilities exceeding 50 megawatts"
-  Extracts: "Tax applies to facilities >50MW" (confidence: 0.85)
+  Calls LLM on bill text → Finding A: "Tax applies to facilities >50MW"
+  (confidence: 0.85, validated by judge)
   
 Stage 2 (Sequential Evolution):
-  LLM re-reads same text: "facilities exceeding 50 megawatts"
-  Extracts: "Tax applies to facilities >100MW" (confidence: 0.75)
-  ⚠️ LLM variability created conflicting interpretation of SAME text!
+  Calls LLM on SAME bill text → Finding B: "Tax applies to facilities >100MW"
+  (confidence: 0.75, LLM variability produced different extraction)
+  ⚠️ Conflict! Two different interpretations of the SAME text
   
 Stage 3 (Rubric Scoring):
-  Has 2 contradictory findings for the same provision
-  Which threshold to score? 50MW or 100MW?
-  ❌ Legal team gets inconsistent analysis
+  Which finding is correct? The validated 50MW or the unvalidated 100MW?
+  ❌ Legal team gets inconsistent analysis, wastes time reconciling
 ```
 
-**Why this happens:** Without state, each stage independently calls the LLM on the same bill text. LLM non-determinism means Stage 2 might hallucinate "100MW" even though the text clearly says "50MW". Now we have conflicting "facts" about the same provision.
-
-*With centralized state (✅ correct):*
+*With centralized state:*
 ```
 Stage 1 (Two-Tier Analysis):
-  LLM reads: "facilities exceeding 50 megawatts"
-  Extracts: "Tax applies to facilities >50MW" (confidence: 0.85)
-  → Judge validates quotes exist verbatim in bill
+  Calls LLM → Finding A: "Tax applies to facilities >50MW"
+  Validated by judge → confidence: 0.85
   → Stored in Findings Registry with ID: finding_001
   
 Stage 2 (Sequential Evolution):
-  Does NOT re-analyze
   Reads finding_001 from registry: "Tax applies to facilities >50MW"
-  Tracks version changes referencing finding_001
-  ✓ No second LLM call = no chance for conflicting extraction
+  Tracks this finding across versions (v1→v2→v3)
+  ✓ NO LLM call for re-extraction, uses authoritative Stage 1 result
   
 Stage 3 (Rubric Scoring):
   Reads finding_001 from registry
-  Scores: "Tax applies to facilities >50MW"
-  ✓ Single consistent finding across all stages
+  Scores: legal_risk=7, financial_impact=8
+  ✓ All stages reference the SAME validated finding
 ```
 
-**Key Insight:** The bill text doesn't change between stages. Re-extracting the same text wastes cost AND introduces LLM variability bugs. Extract once (with validation), then reference by ID.
+**Key Insight:** Stage 1 uses a two-tier process (analyst + judge validation) to produce high-confidence findings. Stage 2's job is NOT to re-extract findings but to track how Stage 1's findings evolve. Without centralized state, Stage 2 might accidentally re-extract with lower fidelity, polluting the analysis.
 
 **Real-World Impact:**
 - **Without state:** Different stages might extract "annual tax of $50/MW" vs "$50 per megawatt annually" as separate findings, causing duplicate alerts
