@@ -9,6 +9,25 @@ __pycache__/
 venv/
 env/
 ENV/
+venv312/
+.venv/
+.venv*/
+
+# Node / frontend
+node_modules/
+
+# Build artifacts
+build/
+dist/
+
+# Test / typecheck / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Coverage
+.coverage
+htmlcov/
 
 # Environment variables
 .env
@@ -22,6 +41,7 @@ Thumbs.db
 
 # Analysis output
 nrg_analysis_*/
+comparison_*/
 
 # VS Code
 .vscode/
