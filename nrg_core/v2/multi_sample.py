@@ -15,6 +15,7 @@ Why:
 - Multiple samples increase reliability
 - Consistency scoring helps identify uncertain findings
 """
+import json
 from typing import List, Dict, Any
 from dataclasses import dataclass
 from openai import OpenAI
@@ -49,7 +50,7 @@ class MultiSampleChecker:
     between different LLM responses to the same bill.
     """
     
-    def __init__(self, model: str = "gpt-4o", api_key: str = None, num_samples: int = 3):
+    def __init__(self, model: str = "gpt-4o", api_key: str | None = None, num_samples: int = 3):
         """
         Initialize multi-sample checker.
         
@@ -218,5 +219,4 @@ class MultiSampleChecker:
             seed=seed
         )
         
-        import json
         return json.loads(response.choices[0].message.content)

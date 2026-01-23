@@ -16,7 +16,7 @@ Why These Models:
 """
 from typing import List, Optional, Literal, Dict, Any
 from pydantic import BaseModel, Field, field_validator
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class Quote(BaseModel):
@@ -92,7 +92,7 @@ class PrimaryAnalysis(BaseModel):
         default=False,
         description="True if impact>=6 OR confidence<0.7"
     )
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class JudgeValidation(BaseModel):

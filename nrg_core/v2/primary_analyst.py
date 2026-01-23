@@ -13,6 +13,7 @@ Why separate from Judge:
 - Enables different models for each role (e.g., analyst=GPT-4o, judge=Claude)
 - Clearer audit trail of who made what claim
 """
+import json
 from typing import Dict, Any
 from openai import OpenAI
 from nrg_core.models_v2 import PrimaryAnalysis, Finding, Quote
@@ -77,7 +78,7 @@ class PrimaryAnalyst:
         result = analyst.analyze(bill_id, bill_text, nrg_context)
     """
     
-    def __init__(self, model: str = "gpt-4o", api_key: str = None):
+    def __init__(self, model: str = "gpt-4o", api_key: str | None = None):
         """
         Initialize primary analyst with LLM configuration.
         
@@ -168,5 +169,4 @@ class PrimaryAnalyst:
             temperature=0.2  # Low temperature for consistent extraction
         )
         
-        import json
         return json.loads(response.choices[0].message.content)

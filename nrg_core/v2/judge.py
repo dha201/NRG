@@ -20,6 +20,7 @@ Why This Matters:
 - Statements may extrapolate beyond what quotes actually say
 - Judge catches these issues before findings reach downstream consumers
 """
+import json
 from typing import Dict, Any
 from openai import OpenAI
 from nrg_core.models_v2 import Finding, JudgeValidation, RubricScore, Quote
@@ -75,7 +76,7 @@ class JudgeModel:
         validation = judge.validate(finding_id, finding, bill_text)
     """
     
-    def __init__(self, model: str = "gpt-4o", api_key: str = None):
+    def __init__(self, model: str = "gpt-4o", api_key: str | None = None):
         """
         Initialize judge with LLM configuration.
         
@@ -209,7 +210,6 @@ class JudgeModel:
             temperature=0.1  # Low temperature for consistent scoring
         )
         
-        import json
         return json.loads(response.choices[0].message.content)
     
     def _call_llm(self, finding: Finding, bill_text: str) -> Dict[str, Any]:
@@ -245,5 +245,4 @@ class JudgeModel:
             temperature=0.1  # Lower temperature for validation (more deterministic)
         )
         
-        import json
         return json.loads(response.choices[0].message.content)

@@ -15,6 +15,7 @@ Why:
 - Architectural diversity reduces systematic errors
 - Adversarial checking improves reliability for high-impact findings
 """
+import json
 from typing import Dict, Any
 from dataclasses import dataclass
 import anthropic
@@ -73,7 +74,7 @@ class FallbackAnalyst:
     4. Return structured second opinion with confidence
     """
     
-    def __init__(self, model: str = "claude-opus-4", api_key: str = None):
+    def __init__(self, model: str = "claude-opus-4", api_key: str | None = None):
         """
         Initialize fallback analyst with Claude.
         
@@ -146,5 +147,4 @@ class FallbackAnalyst:
             messages=[{"role": "user", "content": prompt}]
         )
         
-        import json
         return json.loads(message.content[0].text)
