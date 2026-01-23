@@ -23,10 +23,13 @@ Usage:
     )
     result = agent.research(finding, bill_text)
 """
+import logging
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 import requests
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -94,9 +97,9 @@ class DeepResearchAgent:
     
     def __init__(
         self,
-        openstates_key: str = None,
-        billtrack_key: str = None,
-        openai_key: str = None
+        openstates_key: str | None = None,
+        billtrack_key: str | None = None,
+        openai_key: str | None = None
     ):
         """
         Initialize research agent with API keys.
@@ -239,7 +242,7 @@ class DeepResearchAgent:
             ]
         except Exception as e:
             # Log error but don't fail - other sources may work
-            print(f"OpenStates API error: {e}")
+            logger.warning("OpenStates API error", exc_info=True)
             return []
     
     def _query_billtrack(self, query: str, max_results: int) -> List[Dict]:
@@ -295,7 +298,7 @@ class DeepResearchAgent:
             ]
         except Exception as e:
             # Log error but don't fail
-            print(f"Congress.gov API error: {e}")
+            logger.warning("Congress.gov API error", exc_info=True)
             return []
     
     def _extract_snippet(self, source: Dict, max_length: int) -> str:

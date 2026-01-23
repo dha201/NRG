@@ -34,12 +34,14 @@ class Quote(BaseModel):
 class Finding(BaseModel):
     """
     Single analytical finding with mandatory supporting evidence.
-    
+
     Design: Every claim must have a quote to prevent hallucination.
     The quotes list enforces this at the model level rather than relying on prompts.
-    
+
+    finding_id: Optional ID from Sequential Evolution (F1, F2, etc.) for traceability.
     impact_estimate: Initial estimate from analyst (0-10), refined by judge scoring.
     """
+    finding_id: str | None = Field(None, description="ID from Sequential Evolution (F1, F2, etc.)")
     statement: str = Field(..., min_length=20, description="Clear, specific finding")
     quotes: List[Quote] = Field(..., min_length=1, description="Supporting quotes")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Analyst confidence 0-1")
@@ -118,7 +120,7 @@ class JudgeValidation(BaseModel):
 class ResearchInsight(BaseModel):
     """
     External research insight from deep research agent (Phase 4).
-    
+
     Captures external context that enriches analysis:
     - claim: What the research found
     - source_url: Where it came from (for citation)
@@ -126,7 +128,7 @@ class ResearchInsight(BaseModel):
     - relevance: How relevant to the finding ("high", "medium", "low")
     - checker_validated: Whether checker agent confirmed the claim
     - trust: Confidence in the research (0-1)
-    
+
     Design: Separate model enables filtering by trust/validation status.
     """
     claim: str = Field(..., description="Research claim or insight")
@@ -135,6 +137,27 @@ class ResearchInsight(BaseModel):
     relevance: str = Field(..., description="Relevance level: high, medium, low")
     checker_validated: bool = Field(default=False, description="Validated by checker agent")
     trust: float = Field(default=0.0, ge=0.0, le=1.0, description="Trust score 0-1")
+
+
+class FallbackResult(BaseModel):
+    """
+    Result from fallback model second opinion (Tier 2.5).
+
+    Captures Claude's assessment of a primary analyst finding:
+    - finding_index: Which finding this opinion is for
+    - agrees: Whether Claude agrees with the primary analyst
+    - alternative_interpretation: Claude's alternative reading (empty if agrees)
+    - rationale: Explanation of why Claude agrees/disagrees
+    - confidence: Claude's confidence in its assessment (0-1)
+
+    Design: Enables flagging disagreements for human review and provides
+    architectural diversity benefit from different model providers.
+    """
+    finding_index: int = Field(..., description="Index of the finding this opinion is for")
+    agrees: bool = Field(..., description="Whether fallback model agrees with primary analyst")
+    alternative_interpretation: str = Field(default="", description="Alternative reading if disagrees")
+    rationale: str = Field(..., description="Explanation of agreement/disagreement")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Fallback model confidence 0-1")
 
 
 class TwoTierAnalysisResult(BaseModel):
@@ -170,6 +193,10 @@ class TwoTierAnalysisResult(BaseModel):
     second_model_reviewed: bool = Field(
         default=False,
         description="Whether fallback second model was consulted"
+    )
+    fallback_results: List["FallbackResult"] = Field(
+        default_factory=list,
+        description="Second opinions from fallback model (Tier 2.5)"
     )
     research_insights: List[ResearchInsight] = Field(
         default_factory=list,

@@ -22,9 +22,13 @@ Stability Formula:
 - origin=1, mods=3+ → 0.40 (contentious)
 - origin=N (last version) → 0.20 (last-minute, risky)
 """
+import json
+import logging
 from typing import List, Dict, Any
 from dataclasses import dataclass, field
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -116,10 +120,10 @@ class SequentialEvolutionAgent:
     - stability_scores: {id: score} based on formula
     """
     
-    def __init__(self, model: str = "gpt-4o", api_key: str = None):
+    def __init__(self, model: str = "gpt-4o", api_key: str | None = None) -> None:
         """
         Initialize sequential evolution agent.
-        
+
         Args:
             model: OpenAI model to use
             api_key: OpenAI API key
@@ -199,7 +203,6 @@ class SequentialEvolutionAgent:
                 bill_text=version.text
             )
         else:
-            import json
             previous_findings_str = json.dumps(list(memory.values()), indent=2)
             prompt = EVOLUTION_PROMPT_VN.format(
                 version_number=version.version_number,
@@ -214,9 +217,12 @@ class SequentialEvolutionAgent:
             response_format={"type": "json_object"},
             temperature=0.2
         )
-        
-        import json
-        return json.loads(response.choices[0].message.content)
+
+        try:
+            return json.loads(response.choices[0].message.content)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse version analysis response as JSON: {e}")
+            raise ValueError(f"LLM returned invalid JSON for version analysis: {e}") from e
     
     def _compute_stability(self, registry: Dict, num_versions: int) -> Dict[str, float]:
         """

@@ -27,9 +27,12 @@ Usage:
     if definition:
         print(definition.text)
 """
+import logging
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -121,7 +124,7 @@ class USCODELookup:
             
         except Exception as e:
             # Log error but don't fail - graceful degradation
-            print(f"USCODE lookup error for {citation}: {e}")
+            logger.warning("USCODE lookup error for %s", citation, exc_info=True)
             return None
     
     def _call_uscode_api(self, citation: str) -> Dict[str, Any]:

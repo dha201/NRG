@@ -3,8 +3,7 @@
 Rubric Definitions for Phase 1 - Standardized scoring scales.
 
 Design Decisions:
-- Two dimensions in Phase 1: legal_risk, financial_impact
-- Phase 2 will add: operational_complexity, ambiguity
+- Four dimensions: legal_risk, financial_impact, operational_disruption, ambiguity_risk
 - Anchors defined as ranges (0-2, 3-5, 6-8, 9-10) for consistent scoring
 - Each anchor has clear, objective criteria to reduce inter-rater variability
 

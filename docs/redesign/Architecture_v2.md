@@ -196,17 +196,16 @@ Automated legislative intelligence platform monitoring federal and state legisla
 ### Pattern 2: Two-Tier Consensus
 
 ```
-Tier 1: Primary analyst (1 strong model)         $0.08
-  ↓
-Tier 1.5: Multi-sample check (2-3 samples)       $0.03
+Tier 1.5: Multi-sample check (2-3 samples)       [TBD]
   ↓     (only if impact ≥6 OR confidence <0.7)
-Tier 2: Judge validates + scores                 $0.02
+Tier 2: Judge validates + scores                 [TBD]
   ↓
-Fallback: Second model (double-check)            $0.08
+Tier 2.5: Fallback model (double-check)          [TBD]
           (only if judge uncertain 0.6-0.8 + impact ≥7)
 
-Average cost: $0.08 + $0.015 + $0.02 + $0.016 = $0.13
-Time: 20s + 10s + 5s + 4s = 39s
+Note: Extraction done by Sequential Evolution (Stage 1).
+Cost: [Placeholder - measured at runtime]
+Time: [Placeholder - measured at runtime]
 Accuracy: Comparable (multi-sample check captures most ensemble benefits)
 ```
 
@@ -218,7 +217,7 @@ Accuracy: Comparable (multi-sample check captures most ensemble benefits)
 **Research Support:**
 - Wang et al. (2023): Running analysis multiple times improves accuracy 10-20% over single run
 - Zheng et al. (2024): LLM-as-judge with explicit rubrics matches human judgment 85%+ of the time
-- Cost analysis: Multi-sample + judge = $0.05 vs full 3-model ensemble = $0.20
+- Cost analysis: Multi-sample + judge approach is significantly cheaper than full 3-model ensemble
 
 ---
 
@@ -407,7 +406,7 @@ The orchestrator maintains three state registries:
 | **Token Budget** | 50K tokens | 100K tokens |
 | **Time Budget** | 30 seconds | 300 seconds |
 | **Evidence Required** | 1 quote minimum | 2 quotes minimum |
-| **Estimated Cost** | ~$0.08 | ~$0.15 |
+| **Estimated Cost** | [TBD] | [TBD] |
 
 #### Input/Output
 
@@ -770,7 +769,7 @@ The Findings Registry prevents these problems (see Component 2: Sequential Evolu
 │   Update confidence if needed                           │
 │                                                         │
 │ Frequency: ~10% of high-impact findings                 │
-│ Cost: 0.1 × (3 versions × $0.03/section) = $0.009      │
+│ Cost: [Placeholder - measured at runtime]              │
 │                                                         │
 │ Output: EvolutionAnalysis with stability scores         │
 └─────────────────────────────────────────────────────────┘
@@ -952,7 +951,7 @@ Memory stays ~500 tokens (not 10k + 10k).
 │   - Flag findings with low agreement                    │
 │                                                         │
 │ Cost: 2-3x extraction but only ~20% of findings trigger │
-│ Average cost: 0.2 × (2.5 × $0.08) = $0.04              │
+│ Average cost: [Placeholder - measured at runtime]       │
 └─────────────────┬───────────────────────────────────────┘
                   │
                   v
@@ -999,7 +998,7 @@ Memory stays ~500 tokens (not 10k + 10k).
 │   - If second model disagrees → flag for expert review  │
 │                                                         │
 │ Frequency: ~15-20% of findings                          │
-│ Cost: 0.18 × $0.08 = $0.014                            │
+│ Cost: [Placeholder - measured at runtime]               │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -1058,7 +1057,7 @@ Sequential Evolution already performs extraction. Two-Tier Validation's role is 
 
 **Performance:**
 - Latency: 15-25s (no tier1, +10s tier1.5 if triggered, +5s tier2, +8s tier2.5 if triggered)
-- Cost: ~$0.04 per bill (reduced from $0.12 - no duplicate extraction)
+- Cost: [Placeholder - no duplicate extraction reduces cost vs original design]
 
 ---
 
@@ -1259,7 +1258,7 @@ Process:
      - Refine rubric anchors if systematic bias
      - Update routing rules
 
-Cost: ~$5K-$10K for 50-100 labeled bills
+Cost: [TBD - depends on expert labeling time]
 Time: 2-3 weeks for expert review
 Cadence: Quarterly refresh
 ```
@@ -1293,7 +1292,7 @@ Metrics:
   - System-judge correlation: >0.75 target
   - Disagreement rate: <15% on high-impact
 
-Cost: ~$0.05 per bill for 3-judge evaluation
+Cost: [TBD - measured at runtime]
 Cadence: Continuous (every bill)
 ```
 
@@ -1321,7 +1320,7 @@ Routing Adjustment:
     → Lower threshold for flagged-publish
     → Route more to expert review
 
-Cost: ~$500 per release (20-30 reviews)
+Cost: [TBD - depends on review scope]
 Cadence: Per major release
 ```
 

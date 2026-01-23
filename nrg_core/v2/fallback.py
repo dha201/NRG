@@ -5,7 +5,7 @@ Uses different LLM provider (Claude) for architectural diversity.
 Provides adversarial check on uncertain primary analyst findings.
 
 Design:
-- Triggered when judge_confidence in [0.6, 0.8] AND impact >= 6
+- Triggered when judge_confidence in [0.6, 0.8] AND impact >= 7
 - Uses Claude Opus for different model architecture
 - Returns structured second opinion with agreement/alternative
 - Low temperature (0.2) for consistent reasoning
@@ -16,10 +16,14 @@ Why:
 - Adversarial checking improves reliability for high-impact findings
 """
 import json
+import logging
 from typing import Dict, Any
 from dataclasses import dataclass
 import anthropic
 from nrg_core.models_v2 import Finding
+from nrg_core.v2.exceptions import APIKeyMissingError, LLMResponseError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -64,7 +68,7 @@ class FallbackAnalyst:
     """
     Tier 2 Fallback: Different model for adversarial check.
     
-    Triggered when judge_confidence in [0.6, 0.8] AND impact >= 6.
+    Triggered when judge_confidence in [0.6, 0.8] AND impact >= 7.
     Uses Claude Opus for architectural diversity from GPT models.
     
     Process:
@@ -130,7 +134,7 @@ class FallbackAnalyst:
             Parsed JSON response from Claude
         """
         if not self.client:
-            raise ValueError("Anthropic client not initialized")
+            raise APIKeyMissingError("Anthropic client not initialized - provide api_key")
         
         quotes_text = "\n".join([f"- {q.text} (Section {q.section})" for q in finding.quotes])
         
@@ -146,5 +150,9 @@ class FallbackAnalyst:
             temperature=0.2,
             messages=[{"role": "user", "content": prompt}]
         )
-        
-        return json.loads(message.content[0].text)
+
+        try:
+            return json.loads(message.content[0].text)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse fallback analyst response as JSON: {e}")
+            raise LLMResponseError(f"Claude returned invalid JSON for fallback analysis: {e}") from e

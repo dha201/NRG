@@ -21,10 +21,14 @@ Usage:
     if result.directly_states and result.confidence > 0.8:
         # Claim is well-supported
 """
+import json
+import logging
 from typing import Dict, Any
 from dataclasses import dataclass
 from openai import OpenAI
-import json
+from nrg_core.v2.exceptions import APIKeyMissingError, LLMResponseError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -153,7 +157,7 @@ class CheckerAgent:
             ValueError: If client not initialized
         """
         if not self.client:
-            raise ValueError("OpenAI client not initialized - provide api_key")
+            raise APIKeyMissingError("OpenAI client not initialized - provide api_key")
         
         prompt = CHECKER_PROMPT.format(
             claim=claim,
@@ -167,9 +171,13 @@ class CheckerAgent:
             response_format={"type": "json_object"},
             temperature=0.1  # Low temp for consistent validation
         )
-        
-        return json.loads(response.choices[0].message.content)
-    
+
+        try:
+            return json.loads(response.choices[0].message.content)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse checker response as JSON: {e}")
+            raise LLMResponseError(f"LLM returned invalid JSON for claim validation: {e}") from e
+
     def check_batch(
         self,
         claims_and_snippets: list[tuple[str, str, str]]

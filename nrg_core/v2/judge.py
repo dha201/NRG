@@ -21,10 +21,61 @@ Why This Matters:
 - Judge catches these issues before findings reach downstream consumers
 """
 import json
-from typing import Dict, Any
+import logging
+import time
+from functools import wraps
+from typing import Dict, Any, Callable, TypeVar
+
+F = TypeVar('F', bound=Callable[..., Any])
 from openai import OpenAI
 from nrg_core.models_v2 import Finding, JudgeValidation, RubricScore, Quote
 from nrg_core.v2.rubrics import RUBRIC_SCORING_PROMPT, format_rubric_scale
+from nrg_core.v2.exceptions import APIKeyMissingError, LLMResponseError
+from nrg_core.v2.base import BaseLLMAgent
+
+logger = logging.getLogger(__name__)
+
+
+def retry_on_error(max_retries: int = 3, delay: float = 1.0, backoff: float = 2.0) -> Callable[[F], F]:
+    """Retry decorator for transient LLM errors."""
+    def decorator(func: F) -> F:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            last_error = None
+            current_delay = delay
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {current_delay}s...")
+                        time.sleep(current_delay)
+                        current_delay *= backoff
+            raise last_error
+        return wrapper  # type: ignore[return-value]
+    return decorator
+
+
+def _sanitize_for_prompt(text: str) -> str:
+    """Sanitize external text before including in LLM prompt.
+
+    Removes or escapes patterns that could be interpreted as instructions.
+    """
+    if not text:
+        return ""
+    # Remove common injection patterns
+    sanitized = text.replace("```", "'''")  # Prevent code block escapes
+    sanitized = sanitized.replace("SYSTEM:", "[SYSTEM]")
+    sanitized = sanitized.replace("USER:", "[USER]")
+    sanitized = sanitized.replace("ASSISTANT:", "[ASSISTANT]")
+    sanitized = sanitized.replace("INSTRUCTION:", "[INSTRUCTION]")
+    sanitized = sanitized.replace("IGNORE", "[IGNORE]")
+    # Limit length to prevent context overflow
+    max_len = 50000
+    if len(sanitized) > max_len:
+        sanitized = sanitized[:max_len] + "... [truncated]"
+    return sanitized
 
 
 # Prompt for validation - emphasizes verbatim matching and hallucination detection
@@ -61,31 +112,30 @@ CRITICAL:
 """
 
 
-class JudgeModel:
+class JudgeModel(BaseLLMAgent):
     """
     Tier 2: Judge - Validates findings from primary analyst.
-    
+
     Responsibilities:
     - Verify quotes exist verbatim in bill text
     - Detect hallucinations (unsupported claims)
     - Score evidence quality and ambiguity
     - Score findings on rubric dimensions (Task 5)
-    
+
     Usage:
         judge = JudgeModel(api_key=os.getenv("OPENAI_API_KEY"))
         validation = judge.validate(finding_id, finding, bill_text)
     """
-    
-    def __init__(self, model: str = "gpt-4o", api_key: str | None = None):
+
+    def __init__(self, model: str = "gpt-4o", api_key: str | None = None) -> None:
         """
         Initialize judge with LLM configuration.
-        
+
         Args:
             model: OpenAI model to use (default: gpt-4o)
             api_key: OpenAI API key (required for actual calls, optional for testing)
         """
-        self.model = model
-        self.client = OpenAI(api_key=api_key) if api_key else None
+        super().__init__(model=model, api_key=api_key)
     
     def validate(
         self,
@@ -163,6 +213,7 @@ class JudgeModel:
             rubric_anchor=score_output["rubric_anchor"]
         )
     
+    @retry_on_error(max_retries=3, delay=1.0)
     def _call_llm_for_rubric(
         self,
         dimension: str,
@@ -188,19 +239,20 @@ class JudgeModel:
             ValueError: If client not initialized
         """
         if not self.client:
-            raise ValueError("OpenAI client not initialized")
-        
+            raise APIKeyMissingError("OpenAI client not initialized - provide api_key")
+
         # Format quotes and rubric scale for prompt
         quotes_text = "\n".join([f"- {q.text} (Section {q.section})" for q in finding.quotes])
         rubric_scale = format_rubric_scale(rubric_anchors)
-        
+
+        # Sanitize external inputs to prevent prompt injection
         prompt = RUBRIC_SCORING_PROMPT.format(
             dimension=dimension,
             rubric_scale=rubric_scale,
-            nrg_context=nrg_context,
-            bill_text=bill_text[:5000],  # Truncate to avoid token limits
-            statement=finding.statement,
-            quotes=quotes_text
+            nrg_context=_sanitize_for_prompt(nrg_context),
+            bill_text=_sanitize_for_prompt(bill_text[:5000]),  # Truncate to avoid token limits
+            statement=_sanitize_for_prompt(finding.statement),
+            quotes=_sanitize_for_prompt(quotes_text)
         )
         
         response = self.client.chat.completions.create(
@@ -209,9 +261,14 @@ class JudgeModel:
             response_format={"type": "json_object"},
             temperature=0.1  # Low temperature for consistent scoring
         )
-        
-        return json.loads(response.choices[0].message.content)
-    
+
+        try:
+            return json.loads(response.choices[0].message.content)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse rubric scoring response as JSON: {e}")
+            raise LLMResponseError(f"LLM returned invalid JSON for rubric scoring: {e}") from e
+
+    @retry_on_error(max_retries=3, delay=1.0)
     def _call_llm(self, finding: Finding, bill_text: str) -> Dict[str, Any]:
         """
         Call OpenAI for validation.
@@ -227,15 +284,16 @@ class JudgeModel:
             ValueError: If client not initialized
         """
         if not self.client:
-            raise ValueError("OpenAI client not initialized")
-        
+            raise APIKeyMissingError("OpenAI client not initialized - provide api_key")
+
         # Format quotes for prompt
         quotes_text = "\n".join([f"- {q.text} (Section {q.section})" for q in finding.quotes])
-        
+
+        # Sanitize external inputs to prevent prompt injection
         prompt = JUDGE_VALIDATION_PROMPT.format(
-            bill_text=bill_text,
-            statement=finding.statement,
-            quotes=quotes_text
+            bill_text=_sanitize_for_prompt(bill_text),
+            statement=_sanitize_for_prompt(finding.statement),
+            quotes=_sanitize_for_prompt(quotes_text)
         )
         
         response = self.client.chat.completions.create(
@@ -244,5 +302,9 @@ class JudgeModel:
             response_format={"type": "json_object"},
             temperature=0.1  # Lower temperature for validation (more deterministic)
         )
-        
-        return json.loads(response.choices[0].message.content)
+
+        try:
+            return json.loads(response.choices[0].message.content)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse validation response as JSON: {e}")
+            raise LLMResponseError(f"LLM returned invalid JSON for validation: {e}") from e

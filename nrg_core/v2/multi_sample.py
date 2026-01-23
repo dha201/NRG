@@ -16,12 +16,61 @@ Why:
 - Consistency scoring helps identify uncertain findings
 """
 import json
+import logging
 from typing import List, Dict, Any
 from dataclasses import dataclass
 from openai import OpenAI
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 from nrg_core.models_v2 import Finding, Quote
+from nrg_core.v2.exceptions import APIKeyMissingError, LLMResponseError
+
+logger = logging.getLogger(__name__)
+
+
+# Prompt template for analysis (moved from primary_analyst.py)
+# Design: Explicit requirements prevent common LLM errors:
+# - "verbatim" prevents paraphrasing quotes
+# - "at least one quote" prevents unsupported claims
+# - Impact scale 0-10 enables consistent ranking
+ANALYSIS_PROMPT = """You are a legislative analyst for NRG Energy.
+
+BUSINESS CONTEXT:
+{nrg_context}
+
+TASK:
+Analyze the following bill and identify ALL provisions that could impact NRG Energy's business.
+
+BILL TEXT:
+{bill_text}
+
+REQUIREMENTS:
+1. Extract specific findings (not general observations)
+2. Each finding MUST have at least one supporting quote from the bill
+3. Quote the exact text (verbatim) with section reference
+4. Estimate impact 0-10 (0=no impact, 10=existential threat)
+5. Provide confidence 0-1 for each finding
+
+OUTPUT FORMAT (JSON):
+{{
+  "findings": [
+    {{
+      "statement": "Clear, specific finding",
+      "quotes": [
+        {{"text": "Exact quote from bill", "section": "2.1", "page": null}}
+      ],
+      "confidence": 0.85,
+      "impact_estimate": 7
+    }}
+  ],
+  "overall_confidence": 0.80
+}}
+
+CRITICAL:
+- Every statement must be supported by a direct quote
+- Do not infer provisions not explicitly stated
+- Mark low confidence (<0.7) if interpretation is uncertain
+"""
 
 
 @dataclass
@@ -181,9 +230,27 @@ class MultiSampleChecker:
                 )
                 all_findings.append(finding)
         
-        # Cluster by similarity (simplified: just return all for now)
-        # TODO: Implement proper clustering in production
-        return all_findings
+        # Deduplicate findings based on statement similarity
+        consensus_findings = self._deduplicate_findings(all_findings)
+        return consensus_findings
+
+    def _deduplicate_findings(self, findings: List[Finding]) -> List[Finding]:
+        """Remove duplicate findings based on statement similarity."""
+        if not findings:
+            return findings
+
+        seen_statements = set()
+        unique_findings = []
+
+        for finding in findings:
+            # Normalize statement for comparison
+            normalized = finding.statement.lower().strip()
+            # Simple dedup: exact match after normalization
+            if normalized not in seen_statements:
+                seen_statements.add(normalized)
+                unique_findings.append(finding)
+
+        return unique_findings
     
     def _call_llm(self, bill_text: str, nrg_context: str, seed: int) -> dict[str, Any]:
         """
@@ -201,12 +268,9 @@ class MultiSampleChecker:
             Parsed JSON response from LLM
         """
         if not self.client:
-            raise ValueError("OpenAI client not initialized")
-        
-        # Use same prompt as primary analyst
-        from nrg_core.v2.primary_analyst import PRIMARY_ANALYST_PROMPT
-        
-        prompt = PRIMARY_ANALYST_PROMPT.format(
+            raise APIKeyMissingError("OpenAI client not initialized - provide api_key")
+
+        prompt = ANALYSIS_PROMPT.format(
             bill_text=bill_text,
             nrg_context=nrg_context
         )
@@ -218,5 +282,9 @@ class MultiSampleChecker:
             temperature=0.3,  # Slightly higher for diversity
             seed=seed
         )
-        
-        return json.loads(response.choices[0].message.content)
+
+        try:
+            return json.loads(response.choices[0].message.content)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse multi-sample response as JSON: {e}")
+            raise LLMResponseError(f"LLM returned invalid JSON for multi-sample check: {e}") from e
