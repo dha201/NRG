@@ -400,35 +400,34 @@ The orchestrator maintains three state registries:
 *Without centralized state:*
 ```
 Stage 1 (Two-Tier Analysis):
-  Extracts: "Tax applies to facilities >50MW"
+  Finding A: "Tax applies to facilities >50MW" (confidence: 0.85)
   
 Stage 2 (Sequential Evolution):
-  Re-analyzes same bill text independently
-  Extracts: "Tax threshold is 50 megawatts for power plants"
-  ⚠️ Conflict! Same provision, different wording
+  Re-analyzes bill independently
+  Finding B: "Tax applies to facilities >100MW" (confidence: 0.75)
+  ⚠️ Conflict! Same provision, different interpretation
   
 Stage 3 (Rubric Scoring):
-  Which one to score?
-  - "facilities >50MW" → scores legal_risk=7
-  - "50 megawatts for power plants" → scores legal_risk=6
-  Legal team receives 2 findings for same provision with different scores
+  Which finding to score? A or B?
+  Legal team receives inconsistent analysis
 ```
 
 *With centralized state:*
 ```
 Stage 1 (Two-Tier Analysis):
-  Extracts: "Tax applies to facilities >50MW"
+  Finding A: "Tax applies to facilities >50MW" (confidence: 0.85)
   → Stored in Findings Registry with ID: finding_001
   
 Stage 2 (Sequential Evolution):
   Reads finding_001 from registry
-  Checks: "finding_001 appears in v1, v2, v3 (stable)"
-  ✓ No re-extraction, just tracks stability
+  Sees: "Tax applies to facilities >50MW"
+  ✓ Uses existing finding, no re-extraction
+  ✓ No conflicting "100MW" interpretation created
   
 Stage 3 (Rubric Scoring):
   Reads finding_001 from registry
-  Scores once: legal_risk=7, financial_impact=8
-  ✓ Legal team receives 1 finding with consistent scores
+  Scores the SAME finding: "Tax applies to facilities >50MW"
+  ✓ Legal team receives consistent analysis across all stages
 ```
 
 **Real-World Impact:**
