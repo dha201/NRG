@@ -81,43 +81,37 @@ Automated legislative intelligence platform monitoring federal and state legisla
             │                             │
             │                             v
             │                  ┌────────────────────────────────────┐
-            │                  │ STAGE 1: TWO-TIER ANALYSIS         │
+            │                  │ STAGE 1: SEQUENTIAL EVOLUTION      │
+            │                  │ (Primary Extraction Layer)         │
             │                  │                                    │
-            │                  │ Tier 1: Primary Analyst            │
-            │                  │ - Single model                     │
-            │                  │ - Findings + quotes + confidence   │
+            │                  │ Walk versions chronologically:     │
+            │                  │ - v1 → extract findings to memory  │
+            │                  │ - v2 → compare, track modifications│
+            │                  │ - vN → final state + stability     │
             │                  │                                    │
-            │                  │ Tier 1.5: Multi-Sample Check       │
-            │                  │ (ONLY if impact ≥6 OR conf <0.7)   │
-            │                  │ - Re-run analysis 2-3x             │
-            │                  │ - Compare outputs for consistency  │
-            │                  │                                    │
-            │                  │ Tier 2: Judge Model                │
-            │                  │ - Validate findings                │
-            │                  │ - Score per rubric                 │
-            │                  │ - Detect false claims              │
-            │                  │                                    │
-            │                  │ Fallback: Second Model (only if    │
-            │                  │           judge uncertain (0.6-0.8)│
-            │                  │           + impact score ≥7)       │
+            │                  │ Output: findings_registry with     │
+            │                  │ - Current text (latest version)    │
+            │                  │ - Origin version, modification ct  │
+            │                  │ - Stability scores for predictions │
             │                  └────────────┬─────────────────────┘
             │                               │
             │                               v
             │                  ┌────────────────────────────────────┐
-            │                  │ STAGE 2: SEQUENTIAL EVOLUTION      │
+            │                  │ STAGE 2: TWO-TIER VALIDATION       │
             │                  │                                    │
-            │                  │ Pass 1: Walk versions in order     │
-            │                  │ - v1 → findings + section map      │
-            │                  │ - v2 → update findings, track mods │
-            │                  │ - vN → final state                 │
-            │                  │ - Maintain structured memory       │
+            │                  │ Tier 1.5: Multi-Sample Check       │
+            │                  │ (ONLY if impact ≥6 OR conf <0.7)   │
+            │                  │ - Re-run extraction 2-3x           │
+            │                  │ - Compare outputs for consistency  │
             │                  │                                    │
-            │                  │ Pass 2: Judge computes stability   │
-            │                  │ - Modification frequency           │
-            │                  │ - Flags for heavily modified items │
+            │                  │ Tier 2: Judge Model                │
+            │                  │ - Validate findings vs bill text   │
+            │                  │ - Detect hallucinations            │
+            │                  │ - Assign confidence scores         │
             │                  │                                    │
-            │                  │ Deep dive (if needed)              │
-            │                  │ - Only for unstable + impact ≥7    │
+            │                  │ Fallback: Second Model (only if    │
+            │                  │           judge uncertain (0.6-0.8)│
+            │                  │           + impact score ≥7)       │
             │                  └────────────┬─────────────────────┘
             │                               │
             │                               v
@@ -173,7 +167,7 @@ Automated legislative intelligence platform monitoring federal and state legisla
 
 **Orchestration Layer** (Code-Based)
 - Routes bills based on deterministic rules (page count, versions, domain)
-- Executes fixed pipeline: analysis → evolution → causal → scoring
+- Executes fixed pipeline: evolution → validation → causal → scoring
 - Enforces budgets and quality gates via counters
 - Maintains state across stages (not LLM reasoning)
 
@@ -354,8 +348,8 @@ The system scores each bill across three dimensions using deterministic rules:
 Break analysis into sequential stages with clear dependencies and priorities.
 
 The orchestrator decomposes the analysis into ordered stages:
-1. **Two-Tier Analysis** (Priority 1): Primary analyst extracts findings -> Judge validates
-2. **Sequential Evolution** (Priority 2): Track changes across bill versions with structured memory
+1. **Sequential Evolution** (Priority 1): Walk all versions, extract findings, track modifications and stability
+2. **Two-Tier Validation** (Priority 2): Validate extracted findings, filter hallucinations, assign confidence
 3. **Causal Chain Reasoning** (Priority 3): Identify cause-effect relationships between provisions
 4. **Rubric Scoring** (Priority 4): Score validated findings on legal/financial/operational/ambiguity dimensions
 
@@ -418,7 +412,7 @@ The following diagram shows how the orchestration layer coordinates all analysis
 ┌─────────────────────────────────────────────────────────────────┐
 │ STAGE 2: SEQUENTIAL EVOLUTION (Primary Extraction)             │
 │                                                                 │
-│    Purpose: Extract findings from ALL versions, track evolution │
+│    Extract findings from ALL versions, track evolution │
 │                                                                 │
 │    Process:                                                     │
 │      v1 (Introduced):                                           │
@@ -450,18 +444,18 @@ The following diagram shows how the orchestration layer coordinates all analysis
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 3: TWO-TIER VALIDATION (on latest version findings)      │
+│ STAGE 3: TWO-TIER VALIDATION (on latest version findings)       │
 │                                                                 │
-│    Purpose: Validate extracted findings, filter hallucinations  │
+│    Validate extracted findings, filter hallucinations           │
 │                                                                 │
-│    Input: findings_registry from Stage 2 (latest state)        │
+│    Input: findings_registry from Stage 2 (latest state)         │
 │                                                                 │
 │    Process:                                                     │
 │      Tier 1 (Primary Analyst):                                  │
 │        → Already done in Stage 2 (extraction complete)          │
 │                                                                 │
 │      Tier 1.5 (Multi-Sample Check) - if needed:                 │
-│        → Re-run extraction 2-3x with different seeds            │
+│        → Re-run extraction 2-3x with different prompts          │
 │        → Compare outputs for consistency                        │
 │        → Flag findings with low agreement                       │
 │                                                                 │
@@ -536,14 +530,13 @@ The following diagram shows how the orchestration layer coordinates all analysis
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Why This Pipeline Order?**
 
 | Design Decision | Rationale |
 |-----------------|-----------|
 | **Sequential Evolution runs FIRST** | Must walk all versions to understand evolution before validating. Can't know if finding is "stable" without seeing history. |
 | **Two-Tier validates AFTER extraction** | Validation needs complete findings list. Validating during extraction wastes cost on findings that get modified in later versions. |
 | **Rubric Scoring runs LAST** | Only score validated findings. Hallucinations filtered before scoring to avoid wasting LLM calls. |
-| **Incremental updates for new versions** | Don't re-analyze v1-v3 when v4 appears. Memory enables efficient delta processing. |
+| **Incremental updates for new versions** | Don't re-analyze v1-v3 when v4 appears. Memory enables delta processing. |
 
 **What Stability Scores Predict:**
 
@@ -675,8 +668,8 @@ Output:
 {
   "route": "ENHANCED",
   "tasks": [
-    {"stage": "two_tier_analysis", "priority": 1},
-    {"stage": "sequential_evolution", "priority": 2},
+    {"stage": "sequential_evolution", "priority": 1},
+    {"stage": "two_tier_validation", "priority": 2},
     {"stage": "causal_reasoning", "priority": 3},
     {"stage": "rubric_scoring", "priority": 4}
   ],
@@ -799,16 +792,20 @@ Output:
 └─────────────────────────────────────────────────────────┘
 ```
 
-Validate findings through multi-tier analysis with conditional complexity scaling.
+Validate findings extracted by Sequential Evolution through multi-tier analysis with conditional complexity scaling.
 
 **Input/Output:**
 
-Input (from Component 1: Orchestration Layer):
+Input (from Sequential Evolution - extracted findings):
 ```json
 {
   "bill_text": "...",
-  "nrg_context": "...",
-  "bill_metadata": {...}
+  "findings_registry": {
+    "F1": {"statement": "Tax >100MW", "origin_version": 1, "modification_count": 1},
+    "F3": {"statement": "Renewables exempt", "origin_version": 2, "modification_count": 0}
+  },
+  "stability_scores": {"F1": 0.85, "F3": 0.70},
+  "nrg_context": "..."
 }
 ```
 
@@ -935,11 +932,11 @@ Output:
 └─────────────────────────────────────────────────────────┘
 ```
 
-Track how bill provisions evolve across versions with structured memory to detect stability and contentious changes.
+**Primary extraction layer** that walks all bill versions chronologically, extracting findings and tracking their evolution. Outputs findings with stability scores to Two-Tier Validation.
 
 **Input/Output:**
 
-Input (from Component 1: Orchestration Layer):
+Input (from Orchestration Layer - raw bill versions):
 ```json
 {
   "bill_id": "hr150-118",
@@ -1215,7 +1212,7 @@ Score findings on explicit rubrics with audit trails for transparency and calibr
 
 **Input/Output:**
 
-Input (from Component 2: Two-Tier Analysis output):
+Input (from Two-Tier Validation - validated findings):
 ```json
 {
   "findings": [
