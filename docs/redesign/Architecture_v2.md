@@ -308,10 +308,11 @@ Audit Trail:
 │ Input: Bill + metadata                  │
 │                                         │
 │ Step 1: Assess Complexity               │
-│   - Length scoring: <20p=0, 20-50p=1, >50p=2 │
-│   - Version scoring: 1v=0, 2-5v=1, >5v=2 │
-│   - Domain scoring: General=0, Env=1, Energy/Tax=2 │
-│   Total 0-2pts → STANDARD (80%), 3+pts → ENHANCED (20%) │
+│   - Length > 20 pages? → Complex        │
+│   - Multiple versions? → Complex        │
+│   - High-impact domain? → Complex       │
+│   Decision: STANDARD (~80%) or           │
+│             ENHANCED (~20%)              │
 │                                         │
 │ Step 2: Decompose Tasks                 │
 │   - Task 1: Bill understanding          │
@@ -334,6 +335,26 @@ Audit Trail:
 ```
 
 Code-based orchestration layer for routing, budget enforcement, and state management. **Not an LLM agent**—uses deterministic rules for predictable, cost-efficient control flow.
+
+**Complexity Assessment Details:**
+
+| Criteria | Points | Scoring Logic | Rationale |
+|----------|--------|---------------|-----------|
+| **Length** | 0-2 | `<20 pages = 0`, `20-50 pages = 1`, `>50 pages = 2` | Longer bills contain more provisions requiring deeper analysis |
+| **Versions** | 0-2 | `1 version = 0`, `2-5 versions = 1`, `>5 versions = 2` | More versions indicate complex legislative history with significant changes |
+| **Domain** | 0-2 | `General = 0`, `Environmental = 1`, `Energy/Tax = 2` | Energy/Tax are core to NRG business; Environmental has indirect impact |
+
+**Route Differences:**
+
+| Feature | STANDARD (0-2 points) | ENHANCED (3+ points) |
+|---------|------------------------|----------------------|
+| **Analysis Pipeline** | Single-pass primary analyst | Full two-tier validation |
+| **Multi-Sample Check** | Disabled | Enabled for high-impact findings |
+| **Fallback Model** | Disabled | Enabled for uncertain findings |
+| **Token Budget** | 50K tokens | 100K tokens |
+| **Time Budget** | 30 seconds | 300 seconds |
+| **Evidence Required** | 1 quote minimum | 2 quotes minimum |
+| **Estimated Cost** | ~$0.08 | ~$0.15 |
 
 **Input/Output:**
 
@@ -395,12 +416,6 @@ Output:
 | **Time Budget** | 30 seconds | 300 seconds |
 | **Evidence Required** | 1 quote minimum | 2 quotes minimum |
 | **Estimated Cost** | ~$0.08 | ~$0.15 |
-
-**Why Code-Based Routing:**
-- **Cost**: $0.00 vs $0.02 per bill for LLM-based routing
-- **Consistency**: Deterministic rules ensure predictable decisions
-- **Tunability**: Thresholds adjustable without prompt engineering
-- **Explainability**: Clear breakdown of routing decisions
 
 ---
 
