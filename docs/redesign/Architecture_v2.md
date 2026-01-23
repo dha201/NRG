@@ -311,8 +311,8 @@ Audit Trail:
 │   - Length > 20 pages? → Complex        │
 │   - Multiple versions? → Complex        │
 │   - High-impact domain? → Complex       │
-│   Decision: STANDARD (~80%) or           │
-│             ENHANCED (~20%)              │
+│   Decision: STANDARD (~80%) or          │
+│             ENHANCED (~20%)             │
 │                                         │
 │ Step 2: Decompose Tasks                 │
 │   - Task 1: Bill understanding          │
@@ -334,7 +334,76 @@ Audit Trail:
 └─────────────────────────────────────────┘
 ```
 
-Code-based orchestration layer for routing, budget enforcement, and state management. **Not an LLM agent**—uses deterministic rules for predictable, cost-efficient control flow.
+The Orchestration Layer is a **code-based controller** (not an LLM agent) that manages the entire analysis pipeline. It uses deterministic rules for predictable, cost-efficient control flow across four key responsibilities:
+
+#### Step 1: Assess Complexity
+
+**Purpose:** Route bills to appropriate analysis depth based on objective complexity metrics.
+
+**How It Works:**
+The system scores each bill across three dimensions using deterministic rules:
+- **Length Scoring:** Page count indicates provision density (`<20 pages = 0`, `20-50 = 1`, `>50 = 2`)
+- **Version Scoring:** Multiple versions signal complex legislative evolution (`1 version = 0`, `2-5 = 1`, `>5 = 2`)
+- **Domain Scoring:** Business impact varies by subject matter (`General = 0`, `Environmental = 1`, `Energy/Tax = 2`)
+
+**Why This Works:**
+- **Cost Efficiency:** Code-based routing costs $0.00 vs $0.02/bill for LLM classification
+- **Consistency:** Deterministic rules eliminate LLM variability in routing decisions
+- **Tunability:** Thresholds can be adjusted based on empirical accuracy without prompt engineering
+- **Explainability:** Every routing decision has a clear numeric breakdown for audit trails
+
+**Routing Decision:**
+- **0-2 points → STANDARD route** (~80% of bills): Simple bills get single-pass analysis with basic validation
+- **3+ points → ENHANCED route** (~20% of bills): Complex bills get full two-tier pipeline with judge validation, multi-sample checks, and fallback models
+
+#### Step 2: Decompose Tasks
+
+**Purpose:** Break analysis into sequential stages with clear dependencies and priorities.
+
+**How It Works:**
+The orchestrator decomposes the analysis into ordered stages:
+1. **Two-Tier Analysis** (Priority 1): Primary analyst extracts findings → Judge validates
+2. **Sequential Evolution** (Priority 2): Track changes across bill versions with structured memory
+3. **Causal Chain Reasoning** (Priority 3): Identify cause-effect relationships between provisions
+4. **Rubric Scoring** (Priority 4): Score validated findings on legal/financial/operational/ambiguity dimensions
+
+**Why This Works:**
+- **Sequential Dependencies:** Each stage builds on previous outputs (can't score findings that haven't been validated)
+- **Priority Ordering:** Critical stages run first; if budget exhausted, we have core analysis complete
+- **Failure Isolation:** If one stage fails, others can continue; partial results better than total failure
+- **Parallelization Opportunity:** Future optimization can run independent stages concurrently
+
+#### Step 3: Enforce Gates
+
+**Purpose:** Prevent runaway costs and ensure minimum quality standards.
+
+**How It Works:**
+The orchestrator enforces three types of constraints:
+- **Token Budget:** Running counter tracks LLM API usage; abort if exceeds route limit (50K for STANDARD, 100K for ENHANCED)
+- **Time Budget:** Wall-clock timer prevents indefinite hangs (30s for STANDARD, 300s for ENHANCED)
+- **Quality Gates:** Minimum evidence requirements ensure findings are quote-backed (1 quote for STANDARD, 2 for ENHANCED)
+
+**Why This Works:**
+- **Cost Control:** Token budgets prevent expensive bills from consuming disproportionate resources
+- **SLA Compliance:** Time budgets ensure predictable latency for downstream systems
+- **Quality Assurance:** Evidence gates catch hallucinations before they reach end users
+- **Graceful Degradation:** When limits hit, return partial results with clear flags rather than failing completely
+
+#### Step 4: Maintain State
+
+**Purpose:** Enable cross-stage information flow and provide audit trail of analysis progression.
+
+**How It Works:**
+The orchestrator maintains three state registries:
+- **Cross-Task Memory:** Structured JSON store (~500 tokens) holding findings from completed stages, enabling later stages to reference earlier results without re-analysis
+- **Findings Registry:** Deduplicated list of all extracted findings with validation status, preventing redundant processing
+- **Confidence Tracking:** Per-finding confidence scores that trigger conditional stages (multi-sample check if confidence < 0.7, fallback model if judge uncertain)
+
+**Why This Works:**
+- **Memory Efficiency:** Structured memory stays fixed size vs accumulating full bill texts across stages
+- **Consistency:** Single source of truth prevents conflicting findings from different stages
+- **Conditional Execution:** Confidence tracking enables smart resource allocation (only validate uncertain findings with expensive fallback models)
+- **Audit Trail:** Complete state history enables debugging and compliance reporting
 
 **Complexity Assessment Details:**
 
@@ -396,26 +465,6 @@ Output:
 - Latency: <1s (routing + decomposition)
 - Throughput: Not a bottleneck (stateless)
 - Resource: <1MB memory
-
-**Complexity Assessment Details:**
-
-| Criteria | Points | Scoring Logic | Rationale |
-|----------|--------|---------------|-----------|
-| **Length** | 0-2 | `<20 pages = 0`, `20-50 pages = 1`, `>50 pages = 2` | Longer bills contain more provisions requiring deeper analysis |
-| **Versions** | 0-2 | `1 version = 0`, `2-5 versions = 1`, `>5 versions = 2` | More versions indicate complex legislative history with significant changes |
-| **Domain** | 0-2 | `General = 0`, `Environmental = 1`, `Energy/Tax = 2` | Energy/Tax are core to NRG business; Environmental has indirect impact |
-
-**Route Differences:**
-
-| Feature | STANDARD (0-2 points) | ENHANCED (3+ points) |
-|---------|------------------------|----------------------|
-| **Analysis Pipeline** | Single-pass primary analyst | Full two-tier validation |
-| **Multi-Sample Check** | Disabled | Enabled for high-impact findings |
-| **Fallback Model** | Disabled | Enabled for uncertain findings |
-| **Token Budget** | 50K tokens | 100K tokens |
-| **Time Budget** | 30 seconds | 300 seconds |
-| **Evidence Required** | 1 quote minimum | 2 quotes minimum |
-| **Estimated Cost** | ~$0.08 | ~$0.15 |
 
 ---
 
