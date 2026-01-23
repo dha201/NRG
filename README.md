@@ -130,6 +130,33 @@ Generated reports (timestamped):
 
 ---
 
+## Architecture v2.0 Usage
+
+Run two-tier analysis with the new v2 pipeline:
+
+```bash
+python run_v2_analysis.py \
+  --bill-id HB123 \
+  --bill-text-file path/to/bill.txt \
+  --output analysis_result.json
+```
+
+**Output includes:**
+- Primary analyst findings with supporting quotes
+- Judge validations (quote verification, hallucination detection)
+- Rubric scores (legal risk, financial impact)
+
+**Example:**
+```bash
+# Analyze test bill
+python run_v2_analysis.py --bill-id TEST123 --bill-text-file test_bill.txt
+
+# Run all v2 tests
+pytest tests/test_v2/ -v
+```
+
+---
+
 ## Database Schema
 
 The SQLite database (`bill_cache.db`) contains:

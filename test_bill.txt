@@ -1,0 +1,6 @@
+Section 2.1: Energy Tax
+An annual tax of $50 per megawatt shall be assessed on all fossil fuel 
+generation facilities exceeding 50 megawatts capacity.
+
+Section 4.3: Penalties
+Non-compliance results in penalty of $10,000 per violation.
