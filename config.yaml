@@ -10,7 +10,7 @@
 # LOGGING & DEBUGGING [V2 ONLY]
 # ============================================================================
 logging:
-  # Verbosity levels: quiet, normal, verbose, debug
+  # Logging level: normal (with traces) or debug (all details)
   level: normal
 
   # [V2 ONLY] Show detailed traces for each pipeline stage

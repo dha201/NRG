@@ -13,14 +13,13 @@ Usage:
     python run_v2_full_pipeline.py [options]
 
 Options:
-    --verbose, -v       Enable verbose logging (show all traces)
-    --quiet, -q         Quiet mode (minimal output)
+    --debug             Debug mode (show all traces and detailed debugging)
     --config FILE       Path to config file (default: config.yaml)
     --output DIR        Output directory for reports (default: ./reports)
 
 Examples:
-    python run_v2_full_pipeline.py                    # Normal mode
-    python run_v2_full_pipeline.py -v                 # Verbose mode
+    python run_v2_full_pipeline.py                    # Normal mode (with traces)
+    python run_v2_full_pipeline.py --debug            # Debug mode (all details)
     python run_v2_full_pipeline.py --output ./out     # Custom output dir
 """
 import os
@@ -56,10 +55,8 @@ load_dotenv()
 # ============================================================================
 
 class LogLevel(Enum):
-    QUIET = 0
     NORMAL = 1
-    VERBOSE = 2
-    DEBUG = 3
+    DEBUG = 2
 
 
 @dataclass
@@ -73,7 +70,7 @@ class PipelineLogger:
     show_cost_estimates: bool = True
 
     def _format_time(self) -> str:
-        if self.show_timestamps and self.level.value >= LogLevel.VERBOSE.value:
+        if self.show_timestamps and self.level.value >= LogLevel.NORMAL.value:
             return f"[dim]{datetime.now().strftime('%H:%M:%S')}[/dim] "
         return ""
 
@@ -84,8 +81,8 @@ class PipelineLogger:
             self.console.print(f"{self._format_time()}{prefix}{message}")
 
     def verbose(self, message: str, emoji: str = ""):
-        """Verbose message (only in verbose/debug mode)."""
-        if self.level.value >= LogLevel.VERBOSE.value:
+        """Verbose message (traces - shown in normal mode and above)."""
+        if self.level.value >= LogLevel.NORMAL.value:
             prefix = f"{emoji} " if emoji else ""
             self.console.print(f"{self._format_time()}[dim]{prefix}{message}[/dim]")
 
@@ -112,13 +109,13 @@ class PipelineLogger:
         if self.level.value >= LogLevel.NORMAL.value:
             self.console.print()
             self.console.rule(f"[bold cyan]Stage {stage_num}: {title}[/bold cyan]", style="cyan")
-            if description and self.level.value >= LogLevel.VERBOSE.value:
+            if description and self.level.value >= LogLevel.DEBUG.value:
                 self.console.print(f"[dim]{description}[/dim]")
 
     def trace_decision(self, component: str, decision: str, rationale: str, details: dict = None):
         """Log a decision with rationale - core for traceability."""
         trace_enabled = self.trace_config.get(component, False)
-        if self.level.value >= LogLevel.VERBOSE.value and trace_enabled:
+        if self.level.value >= LogLevel.NORMAL.value and trace_enabled:
             self.console.print(f"  [bold yellow]→ Decision:[/bold yellow] {decision}")
             self.console.print(f"    [dim]Rationale: {rationale}[/dim]")
             if details and self.level.value >= LogLevel.DEBUG.value:
@@ -127,7 +124,7 @@ class PipelineLogger:
 
     def trace_finding(self, finding_num: int, statement: str, quotes: list, confidence: float, impact: int):
         """Log finding extraction details."""
-        if self.level.value >= LogLevel.VERBOSE.value and self.trace_config.get("sequential_evolution", False):
+        if self.level.value >= LogLevel.NORMAL.value and self.trace_config.get("sequential_evolution", False):
             tree = Tree(f"[bold]Finding F{finding_num}[/bold]")
             tree.add(f"Statement: {statement[:100]}{'...' if len(statement) > 100 else ''}")
             if quotes:
@@ -143,7 +140,7 @@ class PipelineLogger:
     def trace_validation(self, finding_num: int, quote_verified: bool, hallucination: bool,
                          evidence_quality: float, judge_confidence: float, reason: str = ""):
         """Log validation result with explanation."""
-        if self.level.value >= LogLevel.VERBOSE.value and self.trace_config.get("two_tier_validation", False):
+        if self.level.value >= LogLevel.NORMAL.value and self.trace_config.get("two_tier_validation", False):
             status_icon = "[green]✓[/green]" if quote_verified and not hallucination else "[red]✗[/red]"
             status_text = "Verified" if quote_verified and not hallucination else "Hallucination" if hallucination else "Unverified"
 
@@ -155,7 +152,7 @@ class PipelineLogger:
 
     def trace_rubric_score(self, finding_id: str, dimension: str, score: int, rationale: str, anchor: str):
         """Log rubric scoring details."""
-        if self.level.value >= LogLevel.VERBOSE.value and self.trace_config.get("rubric_scoring", False):
+        if self.level.value >= LogLevel.NORMAL.value and self.trace_config.get("rubric_scoring", False):
             color = "green" if score <= 2 else "yellow" if score <= 5 else "red" if score <= 8 else "bold red"
             self.console.print(f"  {dimension}: [{color}]{score}/10[/{color}] → {anchor}")
             if self.level.value >= LogLevel.DEBUG.value and rationale:
@@ -163,14 +160,14 @@ class PipelineLogger:
 
     def trace_stability(self, finding_id: str, score: float, origin_version: int, mod_count: int, prediction: str):
         """Log stability analysis."""
-        if self.level.value >= LogLevel.VERBOSE.value and self.trace_config.get("stability_analysis", False):
+        if self.level.value >= LogLevel.NORMAL.value and self.trace_config.get("stability_analysis", False):
             color = "green" if score >= 0.8 else "yellow" if score >= 0.5 else "red"
             self.console.print(f"  {finding_id}: Stability [{color}]{score:.2f}[/{color}]")
             self.console.print(f"    [dim]Origin: v{origin_version} | Modifications: {mod_count} | Prediction: {prediction}[/dim]")
 
     def trace_complexity(self, bill_id: str, score: int, route: str, reasons: list):
         """Log complexity assessment."""
-        if self.level.value >= LogLevel.VERBOSE.value:
+        if self.level.value >= LogLevel.NORMAL.value:
             self.console.print(f"  [bold]Complexity Assessment:[/bold] {bill_id}")
             self.console.print(f"    Score: {score} → Route: [cyan]{route}[/cyan]")
             for reason in reasons:
@@ -206,11 +203,7 @@ def get_logger_from_config(config: dict, cli_level: Optional[str] = None) -> Pip
     log_config = config.get("logging", {})
 
     # CLI overrides config
-    if cli_level == "verbose":
-        level = LogLevel.VERBOSE
-    elif cli_level == "quiet":
-        level = LogLevel.QUIET
-    elif cli_level == "debug":
+    if cli_level == "debug":
         level = LogLevel.DEBUG
     else:
         level_str = log_config.get("level", "normal")
@@ -841,9 +834,7 @@ def main():
         description="NRG Legislative Intelligence V2 Pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
-    parser.add_argument("-q", "--quiet", action="store_true", help="Quiet mode")
-    parser.add_argument("--debug", action="store_true", help="Debug logging")
+    parser.add_argument("--debug", action="store_true", help="Debug mode (verbose output)")
     parser.add_argument("--config", default="config.yaml", help="Config file path")
     parser.add_argument("--output", help="Output directory for reports")
     args = parser.parse_args()
@@ -852,7 +843,7 @@ def main():
     config = load_config(args.config)
 
     # Set up logger
-    cli_level = "debug" if args.debug else "verbose" if args.verbose else "quiet" if args.quiet else None
+    cli_level = "debug" if args.debug else None
     logger = get_logger_from_config(config, cli_level)
 
     # Determine output directory
