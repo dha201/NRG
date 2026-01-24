@@ -28,6 +28,7 @@ import json
 import time
 import tempfile
 import argparse
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -531,63 +532,39 @@ def generate_markdown_report(results: dict, output_path: Path, logger: PipelineL
     logger.success(f"Markdown report: {output_path}")
 
 
-def generate_docx_report(results: dict, output_path: Path, logger: PipelineLogger):
-    """Generate DOCX report."""
+def markdown_to_docx(md_path: Path, docx_path: Path, logger: PipelineLogger) -> bool:
+    """Convert Markdown report to DOCX using pandoc."""
+    # Check if pandoc is available
     try:
-        from docx import Document
-        from docx.shared import Pt
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-    except ImportError:
-        logger.warning("python-docx not installed, skipping DOCX")
-        return
+        result = subprocess.run(
+            ['which', 'pandoc'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode != 0:
+            logger.warning(f"pandoc not found. Install with: brew install pandoc (macOS) or apt-get install pandoc (Linux)")
+            return False
+    except Exception as e:
+        logger.warning(f"Could not check for pandoc: {e}")
+        return False
 
-    logger.verbose("Generating DOCX report...")
-
-    doc = Document()
-    title = doc.add_heading("NRG Legislative Intelligence Report", 0)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    doc.add_paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    doc.add_paragraph(f"Pipeline: V2 (Sequential Evolution + Two-Tier Validation)")
-    doc.add_paragraph(f"Provider: {results.get('provider', 'Unknown')}")
-    doc.add_paragraph(f"Bills Analyzed: {results.get('bills_analyzed', 0)}")
-
-    for bill_result in results.get("results", []):
-        doc.add_heading(f"{bill_result.get('bill_id', 'Unknown')}: {bill_result.get('bill_title', '')}", level=1)
-
-        # Summary table
-        table = doc.add_table(rows=1, cols=2)
-        table.style = "Table Grid"
-        hdr = table.rows[0].cells
-        hdr[0].text = "Metric"
-        hdr[1].text = "Value"
-
-        metrics = [
-            ("Source", bill_result.get("source", "")),
-            ("Route", bill_result.get("route", "")),
-            ("Versions", str(bill_result.get("versions_processed", 0))),
-            ("Findings", str(bill_result.get("findings_count", 0))),
-            ("Verified", str(bill_result.get("verified_findings", 0))),
-            ("Hallucinations", str(bill_result.get("hallucinations_detected", 0))),
-        ]
-        for metric, value in metrics:
-            row = table.add_row().cells
-            row[0].text = metric
-            row[1].text = value
-
-        # Findings
-        doc.add_heading("Findings", level=2)
-        for i, finding in enumerate(bill_result.get("findings", []), 1):
-            validations = bill_result.get("validations", [])
-            validation = validations[i - 1] if i <= len(validations) else {}
-            status = "✓" if validation.get("quote_verified") and not validation.get("hallucination_detected") else "✗"
-
-            doc.add_heading(f"Finding {i} {status}", level=3)
-            doc.add_paragraph(finding.get("statement", ""))
-            doc.add_paragraph(f"Confidence: {finding.get('confidence', 0):.2f} | Impact: {finding.get('impact_estimate', 0)}/10")
-
-    doc.save(str(output_path))
-    logger.success(f"DOCX report: {output_path}")
+    # Convert Markdown to DOCX
+    try:
+        result = subprocess.run(
+            ['pandoc', str(md_path), '-o', str(docx_path)],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        if result.returncode != 0:
+            logger.warning(f"pandoc conversion failed: {result.stderr}")
+            return False
+        logger.success(f"DOCX report: {docx_path}")
+        return True
+    except Exception as e:
+        logger.warning(f"DOCX conversion error: {e}")
+        return False
 
 
 def generate_reports(results: dict, output_dir: Path, config: dict, logger: PipelineLogger) -> Path:
@@ -606,12 +583,14 @@ def generate_reports(results: dict, output_dir: Path, config: dict, logger: Pipe
     logger.success(f"JSON report: {json_path}")
 
     # Markdown
+    md_path = output_dir / f"{base_name}.md"
     if formats.get("markdown", True):
-        generate_markdown_report(results, output_dir / f"{base_name}.md", logger)
+        generate_markdown_report(results, md_path, logger)
 
-    # DOCX
+    # DOCX (convert from Markdown via pandoc)
     if formats.get("docx", True):
-        generate_docx_report(results, output_dir / f"{base_name}.docx", logger)
+        docx_path = output_dir / f"{base_name}.docx"
+        markdown_to_docx(md_path, docx_path, logger)
 
     return json_path
 

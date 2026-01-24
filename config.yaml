@@ -199,8 +199,8 @@ output:
   formats:
     json: true
     markdown: true
-    docx: true
-    pdf: false  # Requires wkhtmltopdf or weasyprint
+    docx: true       # Requires pandoc: brew install pandoc (macOS) or apt-get install pandoc (Linux)
+    pdf: false       # Requires wkhtmltopdf or weasyprint
 
   # Report content options
   include_change_summary: true
