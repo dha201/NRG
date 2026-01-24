@@ -20,6 +20,7 @@ logging:
     rubric_scoring: true          # Show per-dimension scoring rationale
     hallucination_detection: true # Explain why findings were flagged
     stability_analysis: true      # Show stability score calculations
+    llm_interactions: true        # [DEBUG ONLY] Show raw LLM prompts, responses, tokens, costs
 
   # Output formatting
   format:

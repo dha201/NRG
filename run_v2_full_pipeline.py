@@ -184,6 +184,63 @@ class PipelineLogger:
                 table.add_row(*[str(x) for x in row])
             self.console.print(table)
 
+    def log_llm_call(self, component: str, model: str, prompt: str, prompt_tokens: int = 0):
+        """Log LLM API call with prompt and token count."""
+        if self.level.value >= LogLevel.DEBUG.value:
+            self.console.print()
+            self.console.print(f"[bold cyan]→ LLM Call:[/bold cyan] {component} ({model})")
+            self.console.print(f"  [dim]Tokens: {prompt_tokens}[/dim]")
+            self.console.print(f"  [dim]Prompt:[/dim]")
+            # Show first 500 chars of prompt
+            prompt_preview = prompt[:500] + "..." if len(prompt) > 500 else prompt
+            self.console.print(f"  [dim]{prompt_preview}[/dim]")
+
+    def log_llm_response(self, component: str, response: str, response_tokens: int = 0, cost: float = 0.0):
+        """Log LLM API response with tokens and cost."""
+        if self.level.value >= LogLevel.DEBUG.value:
+            self.console.print(f"  [dim]Response tokens: {response_tokens}[/dim]")
+            if cost > 0:
+                self.console.print(f"  [dim]Estimated cost: ${cost:.6f}[/dim]")
+            self.console.print(f"  [dim]Response:[/dim]")
+            # Show first 500 chars of response
+            response_preview = response[:500] + "..." if len(response) > 500 else response
+            self.console.print(f"  [dim][yellow]{response_preview}[/yellow][/dim]")
+
+    def log_token_usage(self, component: str, prompt_tokens: int, completion_tokens: int,
+                       total_tokens: int, cost: float = 0.0, model: str = ""):
+        """Log token usage and cost for an LLM interaction."""
+        if self.level.value >= LogLevel.DEBUG.value:
+            self.console.print(f"  [cyan]Token Usage ({component})[/cyan]")
+            self.console.print(f"    Prompt: {prompt_tokens} | Completion: {completion_tokens} | Total: {total_tokens}")
+            if model:
+                self.console.print(f"    Model: {model}")
+            if cost > 0:
+                self.console.print(f"    Estimated cost: ${cost:.6f}")
+
+    def log_llm_interaction(self, component: str, model: str, prompt: str, response: str,
+                           prompt_tokens: int = 0, completion_tokens: int = 0, cost: float = 0.0):
+        """Log complete LLM interaction for full audit trail."""
+        if self.level.value >= LogLevel.DEBUG.value:
+            self.console.print()
+            self.console.print(Panel(
+                f"[bold cyan]{component}[/bold cyan] ({model})",
+                title="LLM Interaction",
+                border_style="cyan"
+            ))
+
+            total_tokens = prompt_tokens + completion_tokens
+            self.console.print(f"[yellow]Prompt ({prompt_tokens} tokens):[/yellow]")
+            prompt_preview = prompt[:800] + "\n..." if len(prompt) > 800 else prompt
+            self.console.print(f"[dim]{prompt_preview}[/dim]")
+
+            self.console.print(f"\n[yellow]Response ({completion_tokens} tokens):[/yellow]")
+            response_preview = response[:800] + "\n..." if len(response) > 800 else response
+            self.console.print(f"[dim]{response_preview}[/dim]")
+
+            self.console.print(f"\n[yellow]Stats:[/yellow]")
+            self.console.print(f"  Total Tokens: {total_tokens} | Cost: ${cost:.6f}")
+            self.console.print()
+
 
 # ============================================================================
 # CONFIGURATION
@@ -829,10 +886,36 @@ def analyze_bill_v2(bill: Dict[str, Any], config: dict, nrg_context: str, api_ke
 
     try:
         evolution_agent = SequentialEvolutionAgent(api_key=api_key)
+        logger.debug(f"Sequential Evolution Agent initialized for {bill_id}")
+
         evolution_result = evolution_agent.walk_versions(bill_id=bill_id, versions=versions)
 
         findings_count = len(evolution_result.findings_registry)
         logger.success(f"Extracted {findings_count} findings from {len(versions)} versions")
+
+        # Debug: Log detailed LLM interactions if available
+        if logger.level.value >= LogLevel.DEBUG.value:
+            if hasattr(evolution_result, 'llm_interactions'):
+                for interaction in evolution_result.llm_interactions:
+                    logger.log_llm_interaction(
+                        component="Sequential Evolution",
+                        model=interaction.get("model", "unknown"),
+                        prompt=interaction.get("prompt", ""),
+                        response=interaction.get("response", ""),
+                        prompt_tokens=interaction.get("prompt_tokens", 0),
+                        completion_tokens=interaction.get("completion_tokens", 0),
+                        cost=interaction.get("cost", 0.0)
+                    )
+
+            if hasattr(evolution_result, 'token_usage'):
+                logger.log_token_usage(
+                    component="Sequential Evolution",
+                    prompt_tokens=evolution_result.token_usage.get("prompt_tokens", 0),
+                    completion_tokens=evolution_result.token_usage.get("completion_tokens", 0),
+                    total_tokens=evolution_result.token_usage.get("total_tokens", 0),
+                    cost=evolution_result.token_usage.get("cost", 0.0),
+                    model=evolution_result.token_usage.get("model", "")
+                )
 
         # Log each finding with details
         for i, finding in enumerate(evolution_result.findings_registry, 1):
@@ -873,6 +956,8 @@ def analyze_bill_v2(bill: Dict[str, Any], config: dict, nrg_context: str, api_ke
             enable_fallback=config.get("v2", {}).get("two_tier", {}).get("fallback", {}).get("enabled", True)
         )
 
+        logger.debug(f"Two-Tier Orchestrator initialized for {bill_id}")
+
         result = orchestrator.validate(
             bill_id=bill_id,
             bill_text=bill_text,
@@ -880,6 +965,50 @@ def analyze_bill_v2(bill: Dict[str, Any], config: dict, nrg_context: str, api_ke
             findings_registry=evolution_result.findings_registry,
             stability_scores=evolution_result.stability_scores
         )
+
+        # Debug: Log detailed LLM interactions if available
+        if logger.level.value >= LogLevel.DEBUG.value:
+            if hasattr(result, 'llm_interactions'):
+                for interaction in result.llm_interactions:
+                    logger.log_llm_interaction(
+                        component=interaction.get("component", "Two-Tier Validation"),
+                        model=interaction.get("model", "unknown"),
+                        prompt=interaction.get("prompt", ""),
+                        response=interaction.get("response", ""),
+                        prompt_tokens=interaction.get("prompt_tokens", 0),
+                        completion_tokens=interaction.get("completion_tokens", 0),
+                        cost=interaction.get("cost", 0.0)
+                    )
+
+            if hasattr(result, 'token_usage'):
+                logger.log_token_usage(
+                    component="Two-Tier Validation (Judge)",
+                    prompt_tokens=result.token_usage.get("prompt_tokens", 0),
+                    completion_tokens=result.token_usage.get("completion_tokens", 0),
+                    total_tokens=result.token_usage.get("total_tokens", 0),
+                    cost=result.token_usage.get("cost", 0.0),
+                    model=result.token_usage.get("model", "")
+                )
+
+            if hasattr(result, 'multi_sample_interactions') and result.multi_sample_interactions:
+                logger.log_token_usage(
+                    component="Two-Tier Validation (Multi-Sample)",
+                    prompt_tokens=result.multi_sample_interactions.get("prompt_tokens", 0),
+                    completion_tokens=result.multi_sample_interactions.get("completion_tokens", 0),
+                    total_tokens=result.multi_sample_interactions.get("total_tokens", 0),
+                    cost=result.multi_sample_interactions.get("cost", 0.0),
+                    model=result.multi_sample_interactions.get("model", "")
+                )
+
+            if hasattr(result, 'fallback_interactions') and result.fallback_interactions:
+                logger.log_token_usage(
+                    component="Two-Tier Validation (Fallback)",
+                    prompt_tokens=result.fallback_interactions.get("prompt_tokens", 0),
+                    completion_tokens=result.fallback_interactions.get("completion_tokens", 0),
+                    total_tokens=result.fallback_interactions.get("total_tokens", 0),
+                    cost=result.fallback_interactions.get("cost", 0.0),
+                    model=result.fallback_interactions.get("model", "")
+                )
 
         # Log validation for each finding
         for i, validation in enumerate(result.judge_validations, 1):
@@ -923,6 +1052,30 @@ def analyze_bill_v2(bill: Dict[str, Any], config: dict, nrg_context: str, api_ke
 
     # Stage 3: Rubric Scoring
     logger.stage_header(3, "Rubric Scoring", "Score validated findings on 4 dimensions: legal, financial, operational, ambiguity")
+
+    # Debug: Log rubric scoring LLM interactions if available
+    if logger.level.value >= LogLevel.DEBUG.value:
+        if hasattr(result, 'rubric_llm_interactions'):
+            for interaction in result.rubric_llm_interactions:
+                logger.log_llm_interaction(
+                    component=f"Rubric Scoring - {interaction.get('dimension', 'unknown')}",
+                    model=interaction.get("model", "unknown"),
+                    prompt=interaction.get("prompt", ""),
+                    response=interaction.get("response", ""),
+                    prompt_tokens=interaction.get("prompt_tokens", 0),
+                    completion_tokens=interaction.get("completion_tokens", 0),
+                    cost=interaction.get("cost", 0.0)
+                )
+
+        if hasattr(result, 'rubric_token_usage'):
+            logger.log_token_usage(
+                component="Rubric Scoring",
+                prompt_tokens=result.rubric_token_usage.get("prompt_tokens", 0),
+                completion_tokens=result.rubric_token_usage.get("completion_tokens", 0),
+                total_tokens=result.rubric_token_usage.get("total_tokens", 0),
+                cost=result.rubric_token_usage.get("cost", 0.0),
+                model=result.rubric_token_usage.get("model", "")
+            )
 
     rubric_scores = result.rubric_scores
     if rubric_scores:
