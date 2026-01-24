@@ -15,6 +15,54 @@ Automated legislative intelligence platform monitoring federal and state legisla
 
 ---
 
+## Quick Implementation Reference
+
+**Need to find where something is implemented?** This section provides quick lookups.
+
+### Component Implementation Map
+
+| Architecture Concept | Implementation | File | Key Class | Responsibility |
+|---|---|---|---|---|
+| **Sequential Evolution Agent** | Finding extraction & version tracking | `nrg_core/v2/sequential_evolution.py` | `SequentialEvolutionAgent` (line 128) | Walk bill versions chronologically, extract findings, track modifications |
+| **Two-Tier Orchestrator** | Validation orchestration | `nrg_core/v2/two_tier.py` | `TwoTierOrchestrator` (line 40) | Route findings through multi-tier validation pipeline |
+| **Judge Model** | Finding validation & rubric scoring | `nrg_core/v2/judge.py` | `JudgeModel` (line 115) | Verify quotes, detect hallucinations, score rubric dimensions |
+| **Multi-Sample Checker** | Tier 1.5 consistency validation | `nrg_core/v2/multi_sample.py` | `MultiSampleChecker` (line 92) | Run 2-3 analysis samples, deduplicate via semantic similarity |
+| **Fallback Analyst** | Tier 2.5 second opinion | `nrg_core/v2/fallback.py` | `FallbackAnalyst` (line 67) | Get Claude Opus assessment for uncertain high-impact findings |
+| **Rubrics Engine** | Dimension scoring configuration | `nrg_core/v2/rubrics.py` | `ALL_RUBRICS` (dict) | Define 4 rubric dimensions with anchored scales |
+| **Audit Trail Generator** | Compliance documentation | `nrg_core/v2/audit_trail.py` | `AuditTrailGenerator` (line 22) | Generate compliance-ready audit trails with full rationale |
+
+### Data Model Reference
+
+| Concept | Data Model | File | Key Fields | Usage |
+|---|---|---|---|---|
+| **Supporting Evidence** | `Quote` | `nrg_core/models_v2.py:22` | `text`, `section`, `page` | Part of Finding; used in validation |
+| **Finding** | `Finding` | `nrg_core/models_v2.py:34` | `statement`, `quotes` (≥1), `confidence`, `impact_estimate` | Core analytical unit; output of extraction |
+| **Validation Result** | `JudgeValidation` | `nrg_core/models_v2.py:100` | `quote_verified`, `hallucination_detected`, `judge_confidence` | Tier 2 validation per finding |
+| **Dimension Score** | `RubricScore` | `nrg_core/models_v2.py:59` | `dimension`, `score` (0-10), `rationale`, `evidence` | Scored assessment on each rubric dimension |
+| **Complete Result** | `TwoTierAnalysisResult` | `nrg_core/models_v2.py:163` | All findings, validations, scores, trails | Final pipeline output |
+
+### API Entry Points
+
+- **`analyze_bill()`** → `nrg_core/v2/api.py:37` - Full pipeline (extraction + validation)
+- **`validate_findings()`** → `nrg_core/v2/api.py:112` - Validation only (pre-extracted findings)
+
+### Configuration
+
+All V2 configuration in `config.yaml` under `v2:` sections:
+- `v2.orchestration` - Complexity routing
+- `v2.sequential_evolution` - Extraction settings
+- `v2.two_tier.multi_sample` - Tier 1.5 triggers
+- `v2.two_tier.judge` - Tier 2 settings
+- `v2.two_tier.fallback` - Tier 2.5 triggers
+- `v2.rubric_scoring` - Dimension definitions
+
+**Key Thresholds** (from `nrg_core/v2/config.py`):
+- Judge confidence range for fallback: [0.6, 0.8]
+- Multi-sample trigger: impact ≥ 6 OR confidence < 0.7
+- Fallback trigger: judge_confidence in [0.6, 0.8] AND impact ≥ 7
+
+---
+
 ## Product Requirements
 
 ### Functional Requirements
@@ -292,6 +340,87 @@ Audit Trail:
 
 ## Component Architecture Breakdown
 
+### C4 Component-Level Diagram
+
+This diagram shows the major V2 components and their relationships:
+
+```mermaid
+graph TD
+    API["API Layer<br/>nrg_core/v2/api.py<br/>analyze_bill()<br/>validate_findings()"]
+
+    EVOLUTION["Sequential Evolution Agent<br/>nrg_core/v2/sequential_evolution.py<br/>SequentialEvolutionAgent"]
+
+    ORCHESTRATOR["Two-Tier Orchestrator<br/>nrg_core/v2/two_tier.py<br/>TwoTierOrchestrator"]
+
+    JUDGE["Judge Model<br/>nrg_core/v2/judge.py<br/>JudgeModel"]
+
+    MULTISAMPLE["Multi-Sample Checker<br/>nrg_core/v2/multi_sample.py<br/>MultiSampleChecker"]
+
+    FALLBACK["Fallback Analyst<br/>nrg_core/v2/fallback.py<br/>FallbackAnalyst"]
+
+    RUBRICS["Rubrics Engine<br/>nrg_core/v2/rubrics.py<br/>ALL_RUBRICS"]
+
+    AUDIT["Audit Trail Generator<br/>nrg_core/v2/audit_trail.py<br/>AuditTrailGenerator"]
+
+    CONFIG["Configuration<br/>nrg_core/v2/config.py<br/>ThresholdConfig"]
+
+    MODELS["Data Models<br/>nrg_core/models_v2.py<br/>Finding, Quote, RubricScore,<br/>JudgeValidation, TwoTierAnalysisResult"]
+
+    API -->|extracts findings| EVOLUTION
+    API -->|orchestrates validation| ORCHESTRATOR
+
+    EVOLUTION -->|outputs| FINDINGS["findings_registry<br/>stability_scores"]
+
+    ORCHESTRATOR -->|receives| FINDINGS
+
+    ORCHESTRATOR -->|conditional:<br/>impact >= 6 OR<br/>confidence < 0.7| MULTISAMPLE
+    MULTISAMPLE -->|outputs| CONSENSUS["consensus_findings<br/>consistency_score"]
+    CONSENSUS -.->|feeds back| ORCHESTRATOR
+
+    ORCHESTRATOR -->|validates each| JUDGE
+    JUDGE -->|uses| RUBRICS
+    JUDGE -->|outputs| VALIDATION["JudgeValidation<br/>quote_verified<br/>evidence_quality"]
+
+    JUDGE -.->|conditional:<br/>confidence [0.6, 0.8]<br/>AND impact >= 7| FALLBACK
+    FALLBACK -->|outputs| FALLBACK_RESULT["FallbackResult<br/>alternative_interpretation"]
+
+    ORCHESTRATOR -->|generates trails| AUDIT
+    AUDIT -->|outputs| AUDIT_DATA["audit_trails<br/>with full rationale"]
+
+    VALIDATION -->|aggregates| RESULT["TwoTierAnalysisResult<br/>primary_analysis<br/>judge_validations<br/>rubric_scores<br/>audit_trails"]
+    AUDIT_DATA -->|aggregates| RESULT
+    FALLBACK_RESULT -->|aggregates| RESULT
+
+    RESULT -->|returns| API
+
+    CONFIG -.->|thresholds| ORCHESTRATOR
+    CONFIG -.->|thresholds| MULTISAMPLE
+    MODELS -.->|used by all| EVOLUTION
+    MODELS -.->|used by all| ORCHESTRATOR
+
+    classDef apiLayer fill:#e1f5ff,stroke:#01579b,stroke-width:2px,color:#000
+    classDef extraction fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,color:#000
+    classDef orchestration fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef validation fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef data fill:#eceff1,stroke:#263238,stroke-width:2px,color:#000
+
+    class API apiLayer
+    class EVOLUTION extraction
+    class ORCHESTRATOR orchestration
+    class JUDGE,MULTISAMPLE,FALLBACK,RUBRICS,AUDIT validation
+    class MODELS,CONFIG,FINDINGS,CONSENSUS,VALIDATION,RESULT,AUDIT_DATA data
+```
+
+**Key Components:**
+- **Sequential Evolution** (extraction): `SequentialEvolutionAgent` walks versions chronologically
+- **Orchestrator** (control): `TwoTierOrchestrator` routes findings through validation pipeline
+- **Judge** (validation): `JudgeModel` verifies quotes, detects hallucinations, scores dimensions
+- **Multi-Sample** (Tier 1.5, conditional): `MultiSampleChecker` runs 2-3 samples for consistency
+- **Fallback** (Tier 2.5, conditional): `FallbackAnalyst` provides Claude Opus second opinion
+- **Audit Trail** (compliance): `AuditTrailGenerator` creates documentation with full rationale
+
+---
+
 ### Component 1: Orchestration Layer
 
 ```
@@ -327,7 +456,15 @@ Audit Trail:
 └─────────────────────────────────────────┘
 ```
 
+**Implementation:** `TwoTierOrchestrator` class in `nrg_core/v2/two_tier.py:40`
+
 The Orchestration Layer is a **code-based controller** that manages the entire analysis pipeline. It uses deterministic rules for predictable, cost-efficient control flow across four key responsibilities:
+
+**Key Methods:**
+- `validate(bill_id, bill_text, nrg_context, findings_registry, stability_scores)` → `TwoTierAnalysisResult` (line 89)
+- Main entry point via `nrg_core/v2/api.py:analyze_bill()` (line 37)
+
+**Configuration:** See `config.yaml` section `v2.orchestration` or `nrg_core/v2/config.py:ThresholdConfig`
 
 #### 1: Assess Complexity
 
@@ -696,6 +833,25 @@ The Findings Registry prevents these problems (see Component 2: Sequential Evolu
 
 ### Component 2: Sequential Evolution Agent
 
+**Implementation:** `SequentialEvolutionAgent` class in `nrg_core/v2/sequential_evolution.py:128`
+
+**Key Methods:**
+- `walk_versions(bill_id, versions)` → `EvolutionResult` (line 180) - Main entry point
+- `_analyze_version(version, is_first, memory)` → Dict (line 210) - Analyzes individual version
+- `_compute_stability(registry, num_versions)` → Dict (line 245) - Calculates stability 0-1 scores
+
+**Data Models Used:**
+- Input: `List[BillVersion]` with `full_text`, `version_type`
+- Output: `findings_registry` (Dict[str, Dict]), `stability_scores` (Dict[str, float])
+  - Keys in findings_registry: F1, F2, F3, etc. (assigned by agent)
+  - Stability formula: 0.95 (unchanged), 0.85 (1 mod), 0.40 (3+ mods), 0.20 (last-minute)
+
+**Configuration:** `config.yaml` → `v2.sequential_evolution`:
+- `enabled` (bool, default=true)
+- `max_memory_tokens` (int, default=2000)
+- `extract_quotes` (bool, default=true)
+- `track_modifications` (bool, default=true)
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ SEQUENTIAL EVOLUTION AGENT                              │
@@ -938,6 +1094,41 @@ Memory stays ~500 tokens (not 10k + 10k).
 ---
 
 ### Component 3: Two-Tier Validation
+
+**Implementation:** `TwoTierOrchestrator` (coordinator) with specialized agent classes:
+- **Tier 1.5:** `MultiSampleChecker` in `nrg_core/v2/multi_sample.py:92`
+  - Method: `check_consistency(bill_id, bill_text, nrg_context)` → `ConsensusResult`
+  - Deduplication: TF-IDF + cosine similarity (0.85 threshold)
+- **Tier 2:** `JudgeModel` in `nrg_core/v2/judge.py:115`
+  - Method: `validate(finding_id, finding, bill_text)` → `JudgeValidation`
+  - Scoring: `score_rubric(dimension, finding, bill_text, nrg_context)` → `RubricScore`
+- **Tier 2.5:** `FallbackAnalyst` in `nrg_core/v2/fallback.py:67`
+  - Method: `get_second_opinion(finding, bill_text)` → `SecondOpinion`
+  - Uses Claude Opus (different provider for diversity)
+
+**Trigger Conditions:**
+- **Tier 1.5** (Multi-Sample): Activates if `impact >= 6` OR `confidence < 0.7` (from config: `MULTI_SAMPLE_IMPACT_THRESHOLD=6`, `MULTI_SAMPLE_LOW_CONFIDENCE=0.7`)
+- **Tier 2.5** (Fallback): Activates if `judge_confidence in [0.6, 0.8]` AND `impact >= 7` (from config: `JUDGE_LOW_CONFIDENCE=0.6`, `JUDGE_HIGH_CONFIDENCE=0.8`, `FALLBACK_IMPACT_THRESHOLD=7`)
+
+**Data Models:**
+- Input: `findings_registry` (Dict[str, Dict]) from Sequential Evolution
+- Intermediate: `JudgeValidation` model for each finding
+- Output: Aggregated into `TwoTierAnalysisResult`
+  - `judge_validations` (List[JudgeValidation])
+  - `multi_sample_agreement` (float \| None)
+  - `second_model_reviewed` (bool)
+  - `fallback_results` (List[FallbackResult])
+
+**Configuration:** `config.yaml` → `v2.two_tier`:
+- `multi_sample.enabled` (bool, default=true)
+- `multi_sample.samples` (int, default=3)
+- `multi_sample.agreement_threshold` (float, default=0.85)
+- `judge.enabled` (bool, default=true)
+- `judge.verify_quotes` (bool, default=true)
+- `judge.detect_hallucinations` (bool, default=true)
+- `fallback.enabled` (bool, default=true)
+- `fallback.confidence_range` (list, default=[0.6, 0.8])
+- `fallback.impact_threshold` (int, default=7)
 
 ```
 ┌─────────────────────────────────────────────────────────┐

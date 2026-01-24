@@ -70,7 +70,7 @@ v2:
     # Route bills based on complexity score
     complexity_thresholds:
       standard_max: 2      # 0-2 points → STANDARD route
-      enhanced_min: 3      # 3+ points → ENHANCED route
+      enhanced_min: 2      # 2+ points → ENHANCED route [TEMPORARY: lowered to 2 for testing ENHANCED route; calibrate after full testing]
 
     # Complexity scoring weights
     scoring:

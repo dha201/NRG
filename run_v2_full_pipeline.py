@@ -587,7 +587,11 @@ def fetch_bills_from_config(config: dict, logger: PipelineLogger) -> List[Dict]:
 # ============================================================================
 
 def assess_complexity(bill: dict, config: dict, logger: PipelineLogger) -> tuple:
-    """Assess bill complexity and determine routing."""
+    """Assess bill complexity and determine routing.
+
+    NOTE: enhanced_min threshold temporarily lowered to 2 for testing ENHANCED route.
+    Calibrate after full testing cycle with real-world results.
+    """
     v2_config = config.get("v2", {}).get("orchestration", {})
     scoring = v2_config.get("scoring", {
         "pages_20_50": 1,
