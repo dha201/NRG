@@ -69,8 +69,8 @@ v2:
   orchestration:
     # Route bills based on complexity score
     complexity_thresholds:
-      standard_max: 2      # 0-2 points → STANDARD route
-      enhanced_min: 2      # 2+ points → ENHANCED route [TEMPORARY: lowered to 2 for testing ENHANCED route; calibrate after full testing]
+      standard_max: 0      # 0 points → STANDARD route [TEMPORARY: lowered from 2 for testing; calibrate after full testing cycle]
+      enhanced_min: 1      # 1+ points → ENHANCED route [TEMPORARY: lowered from 3 for testing; calibrate after full testing cycle]
 
     # Complexity scoring weights
     scoring:
