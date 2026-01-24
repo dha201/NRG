@@ -371,12 +371,201 @@ def fetch_openstates_bills(jurisdiction: str, bill_numbers: List[str], logger: P
     return bills
 
 
+def fetch_congress_bills(limit: int = 3, logger: Optional[PipelineLogger] = None) -> List[Dict]:
+    """Fetch federal bills from Congress.gov API."""
+    api_key = os.getenv("CONGRESS_API_KEY")
+    if not api_key:
+        if logger:
+            logger.warning("CONGRESS_API_KEY not set, skipping Congress.gov")
+        return []
+
+    if logger:
+        logger.info(f"Fetching federal bills from Congress.gov (limit: {limit})...")
+
+    bills = []
+    congress_num = "118"  # Current Congress
+    bill_type = "hr"  # House bills
+
+    try:
+        with httpx.Client(timeout=30.0) as http:
+            # Fetch recent House bills
+            url = f"https://api.congress.gov/v3/bill/{congress_num}/{bill_type}"
+            params = {"api_key": api_key, "limit": 20, "sort": "updateDate desc"}
+
+            response = http.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            energy_keywords = {
+                "oil", "gas", "petroleum", "natural gas", "fossil fuel", "energy",
+                "drilling", "fracking", "pipeline", "lng", "renewable", "solar",
+                "wind", "hydro", "battery", "electric", "fossil"
+            }
+
+            for bill in data.get("bills", [])[:20]:
+                bill_num = bill.get("number", "").replace("H.R. ", "")
+                title = bill.get("title", "").lower()
+
+                # Check title for energy keywords
+                if not any(kw in title for kw in energy_keywords):
+                    continue
+
+                # Fetch detailed info
+                detail_url = f"https://api.congress.gov/v3/bill/{congress_num}/{bill_type}/{bill_num}"
+                detail_resp = http.get(detail_url, params={"api_key": api_key})
+
+                if detail_resp.status_code == 200:
+                    bill_info = detail_resp.json().get("bill", {})
+                    bill_text = bill_info.get("summary", {}).get("text", "")
+
+                    # Fetch subjects
+                    subjects_url = f"https://api.congress.gov/v3/bill/{congress_num}/{bill_type}/{bill_num}/subjects"
+                    subjects_resp = http.get(subjects_url, params={"api_key": api_key})
+                    subjects_data = {}
+                    if subjects_resp.status_code == 200:
+                        subjects_data = subjects_resp.json().get("subjects", {})
+
+                    if bill_text or subjects_data:
+                        bills.append({
+                            "source": "Congress.gov",
+                            "type": "Federal Bill",
+                            "bill_id": f"HR{bill_num}",
+                            "number": f"H.R. {bill_num}",
+                            "title": title,
+                            "status": bill_info.get("latestAction", {}).get("text", "Unknown"),
+                            "sponsor": bill_info.get("sponsor", {}).get("fullName", "Unknown"),
+                            "introduced_date": bill_info.get("introducedDate", ""),
+                            "bill_text": bill_text or "",
+                            "versions": [{
+                                "version_number": 1,
+                                "version_type": "Current",
+                                "full_text": bill_text or "",
+                                "word_count": len(bill_text.split()) if bill_text else 0
+                            }],
+                            "congress_num": congress_num,
+                            "bill_type": bill_type
+                        })
+                        if logger:
+                            logger.success(f"Found H.R. {bill_num}")
+
+                if len(bills) >= limit:
+                    break
+
+                time.sleep(0.5)  # Rate limiting
+
+    except Exception as e:
+        if logger:
+            logger.error(f"Error fetching Congress bills: {e}")
+
+    if logger:
+        logger.success(f"Fetched {len(bills)} bills from Congress.gov")
+    return bills
+
+
+def fetch_regulations(limit: int = 3, logger: Optional[PipelineLogger] = None) -> List[Dict]:
+    """Fetch federal regulations from Regulations.gov API."""
+    api_key = os.getenv("CONGRESS_API_KEY")  # Regulations.gov uses same API key
+    if not api_key:
+        if logger:
+            logger.warning("CONGRESS_API_KEY not set, skipping Regulations.gov")
+        return []
+
+    if logger:
+        logger.info(f"Fetching federal regulations (limit: {limit})...")
+
+    regulations = []
+
+    try:
+        with httpx.Client(timeout=30.0) as http:
+            url = "https://api.regulations.gov/v4/documents"
+            params = {
+                "api_key": api_key,
+                "per_page": 20,
+                "sort": "-postedDate"
+            }
+
+            response = http.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            energy_keywords = {
+                "oil", "gas", "petroleum", "natural gas", "fossil fuel", "energy",
+                "pipeline", "drilling", "lng", "emissions", "renewable", "solar",
+                "wind", "hydro", "battery", "electric"
+            }
+
+            for doc in data.get("data", [])[:20]:
+                attributes = doc.get("attributes", {})
+                title = attributes.get("title", "").lower()
+                summary = attributes.get("summary", "").lower()
+                doc_type = attributes.get("documentType", "")
+
+                # Check title and summary for energy keywords
+                if not (any(kw in title for kw in energy_keywords) or
+                        any(kw in summary for kw in energy_keywords)):
+                    continue
+
+                doc_id = doc.get("id", "")
+                if doc_id:
+                    regulations.append({
+                        "source": "Regulations.gov",
+                        "type": "Regulation",
+                        "bill_id": doc_id,
+                        "number": doc_id,
+                        "title": attributes.get("title", ""),
+                        "status": doc_type,
+                        "agency": attributes.get("agencyId", ""),
+                        "posted_date": attributes.get("postedDate", ""),
+                        "comment_end_date": attributes.get("commentEndDate", "N/A"),
+                        "effective_date": attributes.get("effectiveDate", "N/A"),
+                        "bill_text": attributes.get("summary", ""),
+                        "versions": [{
+                            "version_number": 1,
+                            "version_type": "Current",
+                            "full_text": attributes.get("summary", ""),
+                            "word_count": len(attributes.get("summary", "").split())
+                        }],
+                        "url": f"https://www.regulations.gov/document/{doc_id}"
+                    })
+                    if logger:
+                        logger.success(f"Found regulation: {doc_id}")
+
+                if len(regulations) >= limit:
+                    break
+
+                time.sleep(0.5)  # Rate limiting
+
+    except Exception as e:
+        if logger:
+            logger.error(f"Error fetching regulations: {e}")
+
+    if logger:
+        logger.success(f"Fetched {len(regulations)} regulations from Regulations.gov")
+    return regulations
+
+
 def fetch_bills_from_config(config: dict, logger: PipelineLogger) -> List[Dict]:
     """Fetch all bills configured in sources."""
     bills = []
 
-    # Open States Texas bills
-    openstates_config = config.get("sources", {}).get("openstates", {})
+    sources_config = config.get("sources", {})
+
+    # Congress.gov federal bills
+    congress_config = sources_config.get("congress", {})
+    if congress_config.get("enabled"):
+        limit = congress_config.get("limit", 3)
+        congress_bills = fetch_congress_bills(limit, logger)
+        bills.extend(congress_bills)
+
+    # Regulations.gov federal regulations
+    regulations_config = sources_config.get("regulations", {})
+    if regulations_config.get("enabled"):
+        limit = regulations_config.get("limit", 3)
+        regs = fetch_regulations(limit, logger)
+        bills.extend(regs)
+
+    # Open States state bills (TX)
+    openstates_config = sources_config.get("openstates", {})
     if openstates_config.get("enabled"):
         texas_config = openstates_config.get("texas_bills", {})
         if texas_config.get("enabled"):
@@ -385,6 +574,10 @@ def fetch_bills_from_config(config: dict, logger: PipelineLogger) -> List[Dict]:
             if bill_numbers:
                 texas_bills = fetch_openstates_bills(jurisdiction, bill_numbers, logger)
                 bills.extend(texas_bills)
+
+    logger.info(f"Total items fetched: {len(bills)} (Congress: {sum(1 for b in bills if b['source']=='Congress.gov')}, "
+                f"Regulations: {sum(1 for b in bills if b['source']=='Regulations.gov')}, "
+                f"Open States: {sum(1 for b in bills if b['source']=='Open States')})")
 
     return bills
 
