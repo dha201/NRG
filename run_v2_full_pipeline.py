@@ -429,7 +429,13 @@ def fetch_openstates_bills(jurisdiction: str, bill_numbers: List[str], logger: P
 
 
 def fetch_congress_bills(limit: int = 3, logger: Optional[PipelineLogger] = None) -> List[Dict]:
-    """Fetch federal bills from Congress.gov API."""
+    """
+    Fetch federal bills from Congress.gov API.
+        - Searches 118th Congress House bills
+        - Energy keyword filtering (oil, gas, pipeline, renewable, etc.)
+        - Extracts title, sponsor, status, dates
+        - Rate limited to config value (default 0.5s) between requests
+    """
     api_key = os.getenv("CONGRESS_API_KEY")
     if not api_key:
         if logger:
@@ -520,7 +526,12 @@ def fetch_congress_bills(limit: int = 3, logger: Optional[PipelineLogger] = None
 
 
 def fetch_regulations(limit: int = 3, logger: Optional[PipelineLogger] = None) -> List[Dict]:
-    """Fetch federal regulations from Regulations.gov API."""
+    """
+    Fetch federal regulations from Regulations.gov API.
+        - Energy keyword filtering across title and summary
+        - Extracts agency, document type, dates, comment periods    
+        - Rate limited to config value (default 0.5s) between requests
+    """
     api_key = os.getenv("CONGRESS_API_KEY")  # Regulations.gov uses same API key
     if not api_key:
         if logger:
@@ -602,7 +613,14 @@ def fetch_regulations(limit: int = 3, logger: Optional[PipelineLogger] = None) -
 
 
 def fetch_bills_from_config(config: dict, logger: PipelineLogger) -> List[Dict]:
-    """Fetch all bills configured in sources."""
+    """
+    Fetch all bills configured in sources:
+        - aggregate from all sources
+        - Congress.gov (configurable limit, default 3)
+        - Regulations.gov (configurable limit, default 3)
+        - Open States (existing, Texas bills)
+        - Provides summary of items fetched by source
+    """
     bills = []
 
     sources_config = config.get("sources", {})
@@ -822,30 +840,39 @@ def markdown_to_docx(md_path: Path, docx_path: Path, logger: PipelineLogger) -> 
 
 
 def generate_reports(results: dict, output_dir: Path, config: dict, logger: PipelineLogger) -> Path:
-    """Generate all configured report formats."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    """Generate all configured report formats in timestamped subdirectory.
 
+    Creates folder: output_dir/nrg_analysis_YYYYMMDD_HHMMSS/
+    With files:
+      - nrg_analysis_YYYYMMDD_HHMMSS.json
+      - nrg_analysis_YYYYMMDD_HHMMSS.md
+      - nrg_analysis_YYYYMMDD_HHMMSS.docx
+    """
+    # Create timestamped subdirectory (matching POC 2 structure)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base_name = f"nrg_analysis_{timestamp}"
+    report_dir = output_dir / base_name
+    report_dir.mkdir(parents=True, exist_ok=True)
 
     formats = config.get("output", {}).get("formats", {"json": True, "markdown": True, "docx": True})
 
     # JSON (always)
-    json_path = output_dir / f"{base_name}.json"
+    json_path = report_dir / f"{base_name}.json"
     with open(json_path, "w") as f:
         json.dump(results, f, indent=2)
     logger.success(f"JSON report: {json_path}")
 
     # Markdown
-    md_path = output_dir / f"{base_name}.md"
+    md_path = report_dir / f"{base_name}.md"
     if formats.get("markdown", True):
         generate_markdown_report(results, md_path, logger)
 
     # DOCX (convert from Markdown via pandoc)
     if formats.get("docx", True):
-        docx_path = output_dir / f"{base_name}.docx"
+        docx_path = report_dir / f"{base_name}.docx"
         markdown_to_docx(md_path, docx_path, logger)
 
+    logger.success(f"All reports saved to: {report_dir}/")
     return json_path
 
 

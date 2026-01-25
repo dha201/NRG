@@ -135,12 +135,12 @@ v2:
 # DATA SOURCES [SHARED]
 # ============================================================================
 sources:
-  # [V2 ONLY] Congress.gov - Federal bills from Congress.gov API
+  # Congress.gov - Federal bills from Congress.gov API
   congress:
     enabled: true
     limit: 3
 
-  # [V2 ONLY] Regulations.gov - Federal regulations
+  # Regulations.gov - Federal regulations
   regulations:
     enabled: true
     limit: 3
@@ -151,7 +151,7 @@ sources:
     limit: 3
     state: US
 
-  # [V2 ONLY] Open States - State bills (PRIMARY SOURCE for state legislation)
+  # Open States - State bills (PRIMARY SOURCE for state legislation)
   openstates:
     enabled: true
     api_key_env: OPENSTATES_API_KEY

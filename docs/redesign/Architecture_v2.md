@@ -15,54 +15,6 @@ Automated legislative intelligence platform monitoring federal and state legisla
 
 ---
 
-## Quick Implementation Reference
-
-**Need to find where something is implemented?** This section provides quick lookups.
-
-### Component Implementation Map
-
-| Architecture Concept | Implementation | File | Key Class | Responsibility |
-|---|---|---|---|---|
-| **Sequential Evolution Agent** | Finding extraction & version tracking | `nrg_core/v2/sequential_evolution.py` | `SequentialEvolutionAgent` (line 128) | Walk bill versions chronologically, extract findings, track modifications |
-| **Two-Tier Orchestrator** | Validation orchestration | `nrg_core/v2/two_tier.py` | `TwoTierOrchestrator` (line 40) | Route findings through multi-tier validation pipeline |
-| **Judge Model** | Finding validation & rubric scoring | `nrg_core/v2/judge.py` | `JudgeModel` (line 115) | Verify quotes, detect hallucinations, score rubric dimensions |
-| **Multi-Sample Checker** | Tier 1.5 consistency validation | `nrg_core/v2/multi_sample.py` | `MultiSampleChecker` (line 92) | Run 2-3 analysis samples, deduplicate via semantic similarity |
-| **Fallback Analyst** | Tier 2.5 second opinion | `nrg_core/v2/fallback.py` | `FallbackAnalyst` (line 67) | Get Claude Opus assessment for uncertain high-impact findings |
-| **Rubrics Engine** | Dimension scoring configuration | `nrg_core/v2/rubrics.py` | `ALL_RUBRICS` (dict) | Define 4 rubric dimensions with anchored scales |
-| **Audit Trail Generator** | Compliance documentation | `nrg_core/v2/audit_trail.py` | `AuditTrailGenerator` (line 22) | Generate compliance-ready audit trails with full rationale |
-
-### Data Model Reference
-
-| Concept | Data Model | File | Key Fields | Usage |
-|---|---|---|---|---|
-| **Supporting Evidence** | `Quote` | `nrg_core/models_v2.py:22` | `text`, `section`, `page` | Part of Finding; used in validation |
-| **Finding** | `Finding` | `nrg_core/models_v2.py:34` | `statement`, `quotes` (≥1), `confidence`, `impact_estimate` | Core analytical unit; output of extraction |
-| **Validation Result** | `JudgeValidation` | `nrg_core/models_v2.py:100` | `quote_verified`, `hallucination_detected`, `judge_confidence` | Tier 2 validation per finding |
-| **Dimension Score** | `RubricScore` | `nrg_core/models_v2.py:59` | `dimension`, `score` (0-10), `rationale`, `evidence` | Scored assessment on each rubric dimension |
-| **Complete Result** | `TwoTierAnalysisResult` | `nrg_core/models_v2.py:163` | All findings, validations, scores, trails | Final pipeline output |
-
-### API Entry Points
-
-- **`analyze_bill()`** → `nrg_core/v2/api.py:37` - Full pipeline (extraction + validation)
-- **`validate_findings()`** → `nrg_core/v2/api.py:112` - Validation only (pre-extracted findings)
-
-### Configuration
-
-All V2 configuration in `config.yaml` under `v2:` sections:
-- `v2.orchestration` - Complexity routing
-- `v2.sequential_evolution` - Extraction settings
-- `v2.two_tier.multi_sample` - Tier 1.5 triggers
-- `v2.two_tier.judge` - Tier 2 settings
-- `v2.two_tier.fallback` - Tier 2.5 triggers
-- `v2.rubric_scoring` - Dimension definitions
-
-**Key Thresholds** (from `nrg_core/v2/config.py`):
-- Judge confidence range for fallback: [0.6, 0.8]
-- Multi-sample trigger: impact ≥ 6 OR confidence < 0.7
-- Fallback trigger: judge_confidence in [0.6, 0.8] AND impact ≥ 7
-
----
-
 ## Product Requirements
 
 ### Functional Requirements
@@ -1926,3 +1878,54 @@ TwoTierOrchestrator(
 - Accuracy: FPR <1.5% on silver set
 - Latency: p95 <60s for complex bills
 - Expert review reduction: >30% fewer escalations
+
+
+
+
+## Quick Implementation Reference
+
+**Need to find where something is implemented?** This section provides quick lookups.
+
+### Component Implementation Map
+
+| Architecture Concept | Implementation | File | Key Class | Responsibility |
+|---|---|---|---|---|
+| **Sequential Evolution Agent** | Finding extraction & version tracking | `nrg_core/v2/sequential_evolution.py` | `SequentialEvolutionAgent` (line 128) | Walk bill versions chronologically, extract findings, track modifications |
+| **Two-Tier Orchestrator** | Validation orchestration | `nrg_core/v2/two_tier.py` | `TwoTierOrchestrator` (line 40) | Route findings through multi-tier validation pipeline |
+| **Judge Model** | Finding validation & rubric scoring | `nrg_core/v2/judge.py` | `JudgeModel` (line 115) | Verify quotes, detect hallucinations, score rubric dimensions |
+| **Multi-Sample Checker** | Tier 1.5 consistency validation | `nrg_core/v2/multi_sample.py` | `MultiSampleChecker` (line 92) | Run 2-3 analysis samples, deduplicate via semantic similarity |
+| **Fallback Analyst** | Tier 2.5 second opinion | `nrg_core/v2/fallback.py` | `FallbackAnalyst` (line 67) | Get Claude Opus assessment for uncertain high-impact findings |
+| **Rubrics Engine** | Dimension scoring configuration | `nrg_core/v2/rubrics.py` | `ALL_RUBRICS` (dict) | Define 4 rubric dimensions with anchored scales |
+| **Audit Trail Generator** | Compliance documentation | `nrg_core/v2/audit_trail.py` | `AuditTrailGenerator` (line 22) | Generate compliance-ready audit trails with full rationale |
+
+### Data Model Reference
+
+| Concept | Data Model | File | Key Fields | Usage |
+|---|---|---|---|---|
+| **Supporting Evidence** | `Quote` | `nrg_core/models_v2.py:22` | `text`, `section`, `page` | Part of Finding; used in validation |
+| **Finding** | `Finding` | `nrg_core/models_v2.py:34` | `statement`, `quotes` (≥1), `confidence`, `impact_estimate` | Core analytical unit; output of extraction |
+| **Validation Result** | `JudgeValidation` | `nrg_core/models_v2.py:100` | `quote_verified`, `hallucination_detected`, `judge_confidence` | Tier 2 validation per finding |
+| **Dimension Score** | `RubricScore` | `nrg_core/models_v2.py:59` | `dimension`, `score` (0-10), `rationale`, `evidence` | Scored assessment on each rubric dimension |
+| **Complete Result** | `TwoTierAnalysisResult` | `nrg_core/models_v2.py:163` | All findings, validations, scores, trails | Final pipeline output |
+
+### API Entry Points
+
+- **`analyze_bill()`** → `nrg_core/v2/api.py:37` - Full pipeline (extraction + validation)
+- **`validate_findings()`** → `nrg_core/v2/api.py:112` - Validation only (pre-extracted findings)
+
+### Configuration
+
+All V2 configuration in `config.yaml` under `v2:` sections:
+- `v2.orchestration` - Complexity routing
+- `v2.sequential_evolution` - Extraction settings
+- `v2.two_tier.multi_sample` - Tier 1.5 triggers
+- `v2.two_tier.judge` - Tier 2 settings
+- `v2.two_tier.fallback` - Tier 2.5 triggers
+- `v2.rubric_scoring` - Dimension definitions
+
+**Key Thresholds** (from `nrg_core/v2/config.py`):
+- Judge confidence range for fallback: [0.6, 0.8]
+- Multi-sample trigger: impact ≥ 6 OR confidence < 0.7
+- Fallback trigger: judge_confidence in [0.6, 0.8] AND impact ≥ 7
+
+---

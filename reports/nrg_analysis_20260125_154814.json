@@ -1,0 +1,567 @@
+{
+  "pipeline": "v2",
+  "provider": "gemini",
+  "timestamp": "20260125_154814",
+  "elapsed_seconds": 277.843462228775,
+  "bills_analyzed": 4,
+  "results": [
+    {
+      "error": "No bill text available",
+      "bill_id": "HR3960"
+    },
+    {
+      "error": "No bill text available",
+      "bill_id": "HR1014"
+    },
+    {
+      "bill_id": "HB4238",
+      "bill_title": "Relating to the collection of consumer debt incurred by certain individuals as a result of identity theft.",
+      "source": "Open States",
+      "route": "ENHANCED",
+      "complexity_score": 1,
+      "versions_processed": 5,
+      "findings_count": 8,
+      "findings": [
+        {
+          "statement": "The bill prohibits creditors, debt collectors, or third-party debt collectors from attempting to collect a consumer debt from a victim of identity theft if certain documentation is provided.",
+          "quotes": [
+            {
+              "text": "A creditor, debt collector, or third-party debt collector may not attempt to collect a consumer debt or a portion of a consumer debt from a consumer if the consumer provides...a criminal complaint alleging the commission of an offense under Section 32.51, Penal Code...",
+              "section": "392.308(c)"
+            }
+          ],
+          "confidence": 0.95,
+          "impact_estimate": 0
+        },
+        {
+          "statement": "The bill requires debt collectors to cease collection efforts and notify others if they receive notice that a debt is a result of identity theft.",
+          "quotes": [
+            {
+              "text": "shall immediately cease efforts to collect the disputed debt or disputed portion of the debt from the victim of identity theft",
+              "section": "392.308(d)(1)"
+            },
+            {
+              "text": "shall send to each person who has previously received a report relating to that debt from the creditor, debt collector, or third-party debt collector notice that the debt is disputed under this section and not collectible from the victim of identity theft",
+              "section": "392.308(d)(2)"
+            }
+          ],
+          "confidence": 0.95,
+          "impact_estimate": 0
+        },
+        {
+          "statement": "The bill allows creditors to enforce security interests but prohibits collection of deficiencies from identity theft victims.",
+          "quotes": [
+            {
+              "text": "may, if the disputed debt or disputed portion of the debt is secured by tangible personal property, enforce the security interest under Chapter 9, Business & Commerce Code, but may not collect or seek to collect any deficiency from the victim of identity theft",
+              "section": "392.308(d)(4)"
+            }
+          ],
+          "confidence": 0.9,
+          "impact_estimate": 0
+        },
+        {
+          "statement": "Creditors can file suit if they believe a consumer falsely claims identity theft.",
+          "quotes": [
+            {
+              "text": "If a creditor, debt collector, or third-party debt collector has a good faith reason to believe that a consumer has disputed a consumer debt or portion of a consumer debt under this section based on a material misrepresentation that the consumer is a victim of identity theft, the creditor, debt collector, or third-party debt collector may file suit in a court of competent jurisdiction to collect the debt from the consumer.",
+              "section": "392.308(e)"
+            }
+          ],
+          "confidence": 0.9,
+          "impact_estimate": 0
+        },
+        {
+          "statement": "The bill provides that a creditor, debt collector, or third-party debt collector may not attempt to collect a consumer debt from a consumer if the consumer provides evidence of being a victim of identity theft.",
+          "quotes": [
+            {
+              "text": "A creditor, debt collector, or third-party debt collector may not attempt to collect a consumer debt or a portion of a consumer debt from a consumer if the consumer provides: (1) a criminal complaint alleging the commission of an offense under Section 32.51, Penal Code, or a substantially similar federal law or law in another state, for which the consumer was a victim, accompanied by a statement identifying the consumer debt or the portion of consumer debt that resulted from the offense;",
+              "section": "392.308(c)"
+            }
+          ],
+          "confidence": 0.95,
+          "impact_estimate": 0
+        },
+        {
+          "statement": "The bill requires creditors to cease collection efforts immediately upon receiving notice that a debt is disputed due to identity theft.",
+          "quotes": [
+            {
+              "text": "shall immediately cease efforts to collect the disputed debt or disputed portion of the debt from the victim of identity theft;",
+              "section": "392.308(d)(1)"
+            }
+          ],
+          "confidence": 0.95,
+          "impact_estimate": 0
+        },
+        {
+          "statement": "The bill allows creditors to enforce security interests on tangible personal property but prohibits collecting deficiencies from victims of identity theft.",
+          "quotes": [
+            {
+              "text": "may, if the disputed debt or disputed portion of the debt is secured by tangible personal property, enforce the security interest under Chapter 9, Business & Commerce Code, but may not collect or seek to collect any deficiency from the victim of identity theft.",
+              "section": "392.308(d)(4)"
+            }
+          ],
+          "confidence": 0.9,
+          "impact_estimate": 0
+        },
+        {
+          "statement": "The bill provides a legal recourse for creditors if they believe the identity theft claim is based on a material misrepresentation.",
+          "quotes": [
+            {
+              "text": "If a creditor, debt collector, or third-party debt collector has a good faith reason to believe that a consumer has disputed a consumer debt or portion of a consumer debt under this section based on a material misrepresentation that the consumer is a victim of identity theft, the creditor, debt collector, or third-party debt collector may file suit in a court of competent jurisdiction to collect the debt from the consumer.",
+              "section": "392.308(e)"
+            }
+          ],
+          "confidence": 0.9,
+          "impact_estimate": 0
+        }
+      ],
+      "validations": [
+        {
+          "finding_id": 0,
+          "quote_verified": true,
+          "hallucination_detected": false,
+          "evidence_quality": 1.0,
+          "judge_confidence": 1.0
+        },
+        {
+          "finding_id": 1,
+          "quote_verified": true,
+          "hallucination_detected": false,
+          "evidence_quality": 1.0,
+          "judge_confidence": 1.0
+        },
+        {
+          "finding_id": 2,
+          "quote_verified": true,
+          "hallucination_detected": false,
+          "evidence_quality": 1.0,
+          "judge_confidence": 1.0
+        },
+        {
+          "finding_id": 3,
+          "quote_verified": true,
+          "hallucination_detected": false,
+          "evidence_quality": 1.0,
+          "judge_confidence": 1.0
+        },
+        {
+          "finding_id": 4,
+          "quote_verified": true,
+          "hallucination_detected": false,
+          "evidence_quality": 1.0,
+          "judge_confidence": 1.0
+        },
+        {
+          "finding_id": 5,
+          "quote_verified": true,
+          "hallucination_detected": false,
+          "evidence_quality": 1.0,
+          "judge_confidence": 1.0
+        },
+        {
+          "finding_id": 6,
+          "quote_verified": true,
+          "hallucination_detected": false,
+          "evidence_quality": 1.0,
+          "judge_confidence": 1.0
+        },
+        {
+          "finding_id": 7,
+          "quote_verified": true,
+          "hallucination_detected": false,
+          "evidence_quality": 1.0,
+          "judge_confidence": 1.0
+        }
+      ],
+      "rubric_scores": [
+        {
+          "dimension": "legal_risk",
+          "score": 0,
+          "rationale": "The bill introduces no new obligations for NRG, as it pertains to consumer debt collection practices related to identity theft, which is outside the scope of NRG's operations in the oil and gas indust...",
+          "rubric_anchor": "0-2: No new obligations - cosmetic language changes only"
+        },
+        {
+          "dimension": "financial_impact",
+          "score": 0,
+          "rationale": "The bill addresses consumer debt collection related to identity theft, which is unlikely to have a direct financial impact on NRG's operations. NRG is primarily involved in oil and gas production, ref...",
+          "rubric_anchor": "0-2: <$100K annual - negligible impact"
+        },
+        {
+          "dimension": "operational_disruption",
+          "score": 0,
+          "rationale": "The bill focuses on consumer debt collection related to identity theft, which does not directly impact NRG's core operations in oil, gas, and energy sectors. The operational processes of NRG are unlik...",
+          "rubric_anchor": "0-2: No operational changes required"
+        },
+        {
+          "dimension": "ambiguity_risk",
+          "score": 2,
+          "rationale": "The bill uses clear and explicit language, specifying conditions under which debt collection is prohibited for identity theft victims. It outlines the required documentation and actions creditors must...",
+          "rubric_anchor": "0-2: Clear, explicit language - no interpretation needed"
+        },
+        {
+          "dimension": "legal_risk",
+          "score": 3,
+          "rationale": "The bill introduces minor compliance obligations for debt collectors, requiring them to cease collection efforts and notify others if a debt is identified as resulting from identity theft. This aligns...",
+          "rubric_anchor": "3-5: Minor compliance - reporting, training, disclosure requirements"
+        },
+        {
+          "dimension": "financial_impact",
+          "score": 0,
+          "rationale": "The bill addresses identity theft-related debt collection, which is unlikely to have a significant financial impact on NRG. The company's core operations in oil and gas are not directly affected by co...",
+          "rubric_anchor": "0-2: <$100K annual - negligible impact"
+        },
+        {
+          "dimension": "operational_disruption",
+          "score": 3,
+          "rationale": "The bill requires debt collectors to adjust their processes by ceasing collection efforts and notifying others if a debt is identified as resulting from identity theft. This necessitates process adjus...",
+          "rubric_anchor": "3-5: Process adjustments - training, reporting procedures"
+        },
+        {
+          "dimension": "ambiguity_risk",
+          "score": 2,
+          "rationale": "The bill uses clear and explicit language regarding the actions required by debt collectors when notified of identity theft. The requirements to cease collection efforts and notify others are straight...",
+          "rubric_anchor": "0-2: Clear, explicit language - no interpretation needed"
+        },
+        {
+          "dimension": "legal_risk",
+          "score": 0,
+          "rationale": "The bill primarily addresses consumer debt collection practices related to identity theft, which does not impose new obligations or significant compliance costs on NRG's operations. It involves cosmet...",
+          "rubric_anchor": "0-2: No new obligations - cosmetic language changes only"
+        },
+        {
+          "dimension": "financial_impact",
+          "score": 0,
+          "rationale": "The bill's impact is negligible as it pertains to identity theft victims, a niche issue unlikely to affect NRG's core operations or financials. The enforcement of security interests without collecting...",
+          "rubric_anchor": "0-2: <$100K annual - negligible impact"
+        },
+        {
+          "dimension": "operational_disruption",
+          "score": 0,
+          "rationale": "The bill's provisions on identity theft primarily affect creditors and debt collectors by prohibiting them from collecting deficiencies from victims of identity theft. This does not require operationa...",
+          "rubric_anchor": "0-2: No operational changes required"
+        },
+        {
+          "dimension": "ambiguity_risk",
+          "score": 3,
+          "rationale": "The bill's language is mostly clear, stating that creditors can enforce security interests but cannot collect deficiencies from identity theft victims. However, the term 'security interest' and its en...",
+          "rubric_anchor": "3-5: Some ambiguity - interpretations clear from context"
+        },
+        {
+          "dimension": "legal_risk",
+          "score": 3,
+          "rationale": "The finding introduces a minor compliance obligation for creditors, allowing them to file suit if they suspect false identity theft claims. This aligns with the rubric's minor compliance category, as ...",
+          "rubric_anchor": "3-5: Minor compliance - reporting, training, disclosure requirements"
+        },
+        {
+          "dimension": "financial_impact",
+          "score": 0,
+          "rationale": "The bill primarily addresses consumer debt collection related to identity theft, allowing creditors to file suit if they suspect false claims. This legislative change does not directly impact NRG's co...",
+          "rubric_anchor": "0: Does not apply to NRG's operations or industry"
+        },
+        {
+          "dimension": "operational_disruption",
+          "score": 1,
+          "rationale": "The legislative finding allows creditors to file suit if they suspect false identity theft claims, which may require minimal operational adjustments for NRG. This could involve minor administrative ch...",
+          "rubric_anchor": "0-2: No operational changes required"
+        },
+        {
+          "dimension": "ambiguity_risk",
+          "score": 3,
+          "rationale": "The language in the bill is mostly clear, but there is some potential for ambiguity in determining what constitutes 'good faith reason' and 'material misrepresentation.' These terms could lead to diff...",
+          "rubric_anchor": "3-5: Some ambiguity - interpretations clear from context"
+        },
+        {
+          "dimension": "legal_risk",
+          "score": 0,
+          "rationale": "The bill introduces no new obligations for NRG as it pertains to consumer debt collection related to identity theft, which is outside NRG's operational scope. The bill focuses on prohibiting debt coll...",
+          "rubric_anchor": "0-2: No new obligations - cosmetic language changes only"
+        },
+        {
+          "dimension": "financial_impact",
+          "score": 0,
+          "rationale": "The bill addresses consumer debt collection related to identity theft, which is unlikely to have a direct financial impact on NRG's operations. NRG's business model, focused on oil, gas, and energy, d...",
+          "rubric_anchor": "0-2: <$100K annual - negligible impact"
+        },
+        {
+          "dimension": "operational_disruption",
+          "score": 0,
+          "rationale": "The bill focuses on consumer debt collection related to identity theft, which does not directly impact NRG's operations in oil, gas, or energy sectors. The legislation pertains to financial and legal ...",
+          "rubric_anchor": "0-2: No operational changes required"
+        },
+        {
+          "dimension": "ambiguity_risk",
+          "score": 2,
+          "rationale": "The bill uses clear and explicit language, specifying the conditions under which a creditor, debt collector, or third-party debt collector must cease collection efforts. It outlines the specific types...",
+          "rubric_anchor": "0-2: Clear, explicit language - no interpretation needed"
+        },
+        {
+          "dimension": "legal_risk",
+          "score": 3,
+          "rationale": "The bill introduces a requirement for creditors to cease collection efforts upon notification of identity theft, which imposes a minor compliance obligation. This involves updating procedures and trai...",
+          "rubric_anchor": "3-5: Minor compliance - reporting, training, disclosure requirements"
+        },
+        {
+          "dimension": "financial_impact",
+          "score": 0,
+          "rationale": "The bill addresses consumer debt collection related to identity theft, which is unlikely to have a significant financial impact on NRG's operations. NRG is a large integrated oil and gas company, and ...",
+          "rubric_anchor": "0-2: <$100K annual - negligible impact"
+        },
+        {
+          "dimension": "operational_disruption",
+          "score": 1,
+          "rationale": "The bill requires creditors to cease collection efforts upon notice of identity theft, which involves minimal operational changes. This primarily affects administrative processes related to debt colle...",
+          "rubric_anchor": "0-2: No operational changes required"
+        },
+        {
+          "dimension": "ambiguity_risk",
+          "score": 2,
+          "rationale": "The bill uses clear and explicit language requiring creditors to cease collection efforts immediately upon receiving notice of identity theft. The directive is straightforward, leaving little room for...",
+          "rubric_anchor": "0-2: Clear, explicit language - no interpretation needed"
+        },
+        {
+          "dimension": "legal_risk",
+          "score": 0,
+          "rationale": "The bill introduces no new obligations for NRG, as it pertains to consumer debt collection related to identity theft, which is outside NRG's operational scope. The provision allowing enforcement of se...",
+          "rubric_anchor": "0-2: No new obligations - cosmetic language changes only"
+        },
+        {
+          "dimension": "financial_impact",
+          "score": 0,
+          "rationale": "The bill's provision to prohibit collecting deficiencies from victims of identity theft has negligible financial impact on NRG. The company's core operations in oil and gas are not directly affected b...",
+          "rubric_anchor": "0-2: <$100K annual - negligible impact"
+        },
+        {
+          "dimension": "operational_disruption",
+          "score": 0,
+          "rationale": "The bill's provision allowing creditors to enforce security interests on tangible personal property but prohibiting the collection of deficiencies from victims of identity theft does not require opera...",
+          "rubric_anchor": "0-2: No operational changes required"
+        },
+        {
+          "dimension": "ambiguity_risk",
+          "score": 2,
+          "rationale": "The bill uses clear and explicit language regarding the enforcement of security interests on tangible personal property and the prohibition on collecting deficiencies from victims of identity theft. T...",
+          "rubric_anchor": "0-2: Clear, explicit language - no interpretation needed"
+        },
+        {
+          "dimension": "legal_risk",
+          "score": 3,
+          "rationale": "The bill introduces minor compliance obligations for creditors, allowing them to file suit if they suspect identity theft claims are misrepresented. This adds a layer of legal action but does not impo...",
+          "rubric_anchor": "3-5: Minor compliance - reporting, training, disclosure requirements"
+        },
+        {
+          "dimension": "financial_impact",
+          "score": 0,
+          "rationale": "The bill addresses identity theft claims and provides legal recourse for creditors if they suspect misrepresentation. This is unlikely to have a direct financial impact on NRG's operations, as it pert...",
+          "rubric_anchor": "0-2: <$100K annual - negligible impact"
+        },
+        {
+          "dimension": "operational_disruption",
+          "score": 0,
+          "rationale": "The bill provides legal recourse for creditors in cases of identity theft claims based on misrepresentation, but it does not require operational changes for NRG. The bill is specific to consumer debt ...",
+          "rubric_anchor": "0-2: No operational changes required"
+        },
+        {
+          "dimension": "ambiguity_risk",
+          "score": 3,
+          "rationale": "The bill provides a clear process for creditors to challenge identity theft claims they believe are misrepresented. However, the term 'good faith reason' introduces some ambiguity as it relies on subj...",
+          "rubric_anchor": "3-5: Some ambiguity - interpretations clear from context"
+        }
+      ],
+      "multi_sample_agreement": 0.24008040494234684,
+      "second_model_reviewed": false,
+      "hallucinations_detected": 0,
+      "verified_findings": 8
+    },
+    {
+      "bill_id": "HB391",
+      "bill_title": "Relating to board of directors meeting locations of certain special districts.",
+      "source": "Open States",
+      "route": "ENHANCED",
+      "complexity_score": 1,
+      "versions_processed": 3,
+      "findings_count": 4,
+      "findings": [
+        {
+          "statement": "The bill amends the Water Code to allow rural area water districts to conduct board meetings outside the district, provided they give notice and justification.",
+          "quotes": [
+            {
+              "text": "the board shall designate one or more places inside or outside the district for conducting the meetings of the board.",
+              "section": "49.062(b)"
+            },
+            {
+              "text": "If the board establishes a meeting place or places outside the district, it shall give notice of the location or locations by filing a true copy of the resolution establishing the location or locations of the meeting place or places and a justification of why the meeting will not be held in the district or within 10 miles of the boundary of the district, if applicable, with the commission",
+              "section": "49.062(b)"
+            }
+          ],
+          "confidence": 0.95,
+          "impact_estimate": 0
+        },
+        {
+          "statement": "The bill defines 'rural area district' as a district with more than half of its projected retail water or sewer connections active and not located in a county with a population of 325,000 or more.",
+          "quotes": [
+            {
+              "text": "\"rural area district\" means a district in which more than half of the district\u2019s projected retail water or sewer connections are active and that is not wholly or partly located in a county that has a population of 325,000 or more.",
+              "section": "49.062(b-1)"
+            }
+          ],
+          "confidence": 0.9,
+          "impact_estimate": 0
+        },
+        {
+          "statement": "Rural area districts must conduct at least one in-person meeting per quarter within the district or within 10 miles of its boundary, unless impractical.",
+          "quotes": [
+            {
+              "text": "the board shall conduct a meeting at a designated meeting location inside the district or within 10 miles of the boundary of the district at least once per quarter.",
+              "section": "49.062(b-2)"
+            }
+          ],
+          "confidence": 0.9,
+          "impact_estimate": 0
+        },
+        {
+          "statement": "Rural area districts can conduct quarterly meetings via telephone or video conference, except for meetings discussing tax rates.",
+          "quotes": [
+            {
+              "text": "a rural area district may satisfy the requirements of Subsection (b-2) by conducting quarterly meetings by telephone conference call or video conference call. A meeting to discuss the tax rate of the district must be conducted in person.",
+              "section": "49.062(b-3)"
+            }
+          ],
+          "confidence": 0.9,
+          "impact_estimate": 0
+        }
+      ],
+      "validations": [
+        {
+          "finding_id": 0,
+          "quote_verified": true,
+          "hallucination_detected": false,
+          "evidence_quality": 1.0,
+          "judge_confidence": 1.0
+        },
+        {
+          "finding_id": 1,
+          "quote_verified": true,
+          "hallucination_detected": false,
+          "evidence_quality": 1.0,
+          "judge_confidence": 1.0
+        },
+        {
+          "finding_id": 2,
+          "quote_verified": true,
+          "hallucination_detected": false,
+          "evidence_quality": 1.0,
+          "judge_confidence": 1.0
+        },
+        {
+          "finding_id": 3,
+          "quote_verified": true,
+          "hallucination_detected": false,
+          "evidence_quality": 1.0,
+          "judge_confidence": 1.0
+        }
+      ],
+      "rubric_scores": [
+        {
+          "dimension": "legal_risk",
+          "score": 0,
+          "rationale": "The bill allows rural area water districts to conduct board meetings outside the district with proper notice and justification. This change is primarily administrative and does not impose new obligati...",
+          "rubric_anchor": "0-2: No new obligations - cosmetic language changes only"
+        },
+        {
+          "dimension": "financial_impact",
+          "score": 0,
+          "rationale": "The bill pertains to the meeting locations of rural area water districts, which does not directly impact NRG's financial operations or revenue streams. The legislative change is administrative and doe...",
+          "rubric_anchor": "0-2: <$100K annual - negligible impact"
+        },
+        {
+          "dimension": "operational_disruption",
+          "score": 0,
+          "rationale": "The bill allows rural area water districts to conduct board meetings outside the district with proper notice and justification. This change does not require any operational changes for NRG, as it pert...",
+          "rubric_anchor": "0-2: No operational changes required"
+        },
+        {
+          "dimension": "ambiguity_risk",
+          "score": 3,
+          "rationale": "The bill provides clear guidelines for rural area water districts to conduct meetings outside the district, with specific requirements for notice and justification. However, there is some ambiguity re...",
+          "rubric_anchor": "3-5: Some ambiguity - interpretations clear from context"
+        },
+        {
+          "dimension": "legal_risk",
+          "score": 0,
+          "rationale": "The bill pertains to the meeting locations of rural area water districts and does not impose any new obligations or significant changes that would affect NRG's operations. It involves cosmetic languag...",
+          "rubric_anchor": "0-2: No new obligations - cosmetic language changes only"
+        },
+        {
+          "dimension": "financial_impact",
+          "score": 0,
+          "rationale": "The bill pertains to the meeting locations of rural area water districts and does not directly impact NRG's operations or financials. NRG is primarily involved in oil, gas, and energy sectors, and thi...",
+          "rubric_anchor": "0-2: <$100K annual - negligible impact"
+        },
+        {
+          "dimension": "operational_disruption",
+          "score": 0,
+          "rationale": "The bill pertains to the meeting locations of rural area water districts and does not require any operational changes for NRG. It defines 'rural area district' and sets guidelines for meeting location...",
+          "rubric_anchor": "0-2: No operational changes required"
+        },
+        {
+          "dimension": "ambiguity_risk",
+          "score": 3,
+          "rationale": "The definition of 'rural area district' is mostly clear but could lead to some interpretation issues regarding the term 'projected retail water or sewer connections' and the specific population thresh...",
+          "rubric_anchor": "3-5: Some ambiguity - interpretations clear from context"
+        },
+        {
+          "dimension": "legal_risk",
+          "score": 3,
+          "rationale": "The legislative finding imposes a minor compliance requirement on rural area districts to conduct at least one in-person meeting per quarter within the district or within 10 miles of its boundary, unl...",
+          "rubric_anchor": "3-5: Minor compliance - reporting, training, disclosure requirements"
+        },
+        {
+          "dimension": "financial_impact",
+          "score": 0,
+          "rationale": "The legislative finding requires rural area districts to conduct at least one in-person meeting per quarter within the district or within 10 miles of its boundary, unless impractical. This requirement...",
+          "rubric_anchor": "0-2: <$100K annual - negligible impact"
+        },
+        {
+          "dimension": "operational_disruption",
+          "score": 0,
+          "rationale": "The legislative finding requires rural area districts to conduct at least one in-person meeting per quarter within the district or within 10 miles of its boundary, unless impractical. This requirement...",
+          "rubric_anchor": "0-2: No operational changes required"
+        },
+        {
+          "dimension": "ambiguity_risk",
+          "score": 3,
+          "rationale": "The finding has some ambiguity due to the allowance for meetings outside the district if deemed impractical, which requires interpretation of 'impractical.' However, the requirement for at least one i...",
+          "rubric_anchor": "3-5: Some ambiguity - interpretations clear from context"
+        },
+        {
+          "dimension": "legal_risk",
+          "score": 0,
+          "rationale": "The legislative finding pertains to the meeting logistics of rural area water districts, allowing for quarterly meetings via telephone or video conference, except for tax rate discussions. This change...",
+          "rubric_anchor": "0-2: No new obligations - cosmetic language changes only"
+        },
+        {
+          "dimension": "financial_impact",
+          "score": 0,
+          "rationale": "The legislative finding pertains to the meeting logistics of rural area water districts, allowing them to conduct quarterly meetings via telephone or video conference, except for tax rate discussions....",
+          "rubric_anchor": "0-2: <$100K annual - negligible impact"
+        },
+        {
+          "dimension": "operational_disruption",
+          "score": 0,
+          "rationale": "The legislative finding allows rural area districts to conduct quarterly meetings via telephone or video conference, except for tax rate discussions which must be in person. This change does not requi...",
+          "rubric_anchor": "0-2: No operational changes required"
+        },
+        {
+          "dimension": "ambiguity_risk",
+          "score": 3,
+          "rationale": "The legislative finding has some ambiguity due to the allowance for meetings to be conducted via telephone or video conference, except for tax rate discussions which must be in person. This creates a ...",
+          "rubric_anchor": "3-5: Some ambiguity - interpretations clear from context"
+        }
+      ],
+      "multi_sample_agreement": 0.0,
+      "second_model_reviewed": false,
+      "hallucinations_detected": 0,
+      "verified_findings": 4
+    }
+  ]
+}
