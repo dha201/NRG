@@ -1,4 +1,3 @@
-# nrg_core/v2/judge.py
 """
 Judge Model (Tier 2) - Validates findings, detects hallucinations, scores evidence quality.
 

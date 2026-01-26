@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 NRG Legislative Intelligence - V2 Full Pipeline
 

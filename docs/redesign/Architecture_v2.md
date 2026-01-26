@@ -60,6 +60,8 @@ Automated legislative intelligence platform monitoring federal and state legisla
 
 ## System Overview Diagram
 
+> **Implementation Status:** Currently only the ENHANCED path is implemented. STANDARD path and confidence-based routing are planned for future phases. Deep Research is optional and disabled by default.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ INPUT: Bill (text, versions, metadata)                                  │
@@ -69,15 +71,16 @@ Automated legislative intelligence platform monitoring federal and state legisla
         ┌──────────────────────────────────────────────┐
         │ ORCHESTRATION: Route & Control (Code-Based)  │
         │ - Assess complexity (deterministic rules)    │
-        │ - Select path (STANDARD vs ENHANCED)         │
-        │ - Maintain state, enforce budgets            │
+        │ - Select path (STANDARD vs ENHANCED)         │  [PLANNED]
+        │ - Maintain state, enforce budgets            │  [PLANNED]
         └──────────────────┬───────────────────────────┘
                            │
             ┌──────────────┴──────────────┐
             │                             │
             v (Simple)                    v (Complex)
-      STANDARD PATH               ENHANCED PATH
-      (1 model, 15s)             (2-tier, 3 mins)
+      STANDARD PATH               ENHANCED PATH ✓
+      (1 model, 15s)              (2-tier, 3 mins)
+      [PLANNED]                           |
             │                             │
             │                             v
             │                  ┌────────────────────────────────────┐
@@ -112,19 +115,15 @@ Automated legislative intelligence platform monitoring federal and state legisla
             │                  │ Fallback: Second Model (only if    │
             │                  │           judge uncertain (0.6-0.8)│
             │                  │           + impact score ≥7)       │
+            │                  │                                    │
+            │                  │ Deep Research [OPTIONAL]           │
+            │                  │ - External context       │
+            │                  │ - Disabled by default              │
             │                  └────────────┬─────────────────────┘
             │                               │
             │                               v
             │                  ┌────────────────────────────────────┐
-            │                  │ STAGE 3: CAUSAL CHAIN REASONING    │
-            │                  │ - Researcher builds chains         │
-            │                  │ - Judge scores evidence quality    │
-            │                  │ - Deep Research adds context       │
-            │                  └────────────┬─────────────────────┘
-            │                               │
-            │                               v
-            │                  ┌────────────────────────────────────┐
-            │                  │ STAGE 4: RUBRIC-BASED SCORING      │
+            │                  │ STAGE 3: RUBRIC-BASED SCORING      │
             │                  │                                    │
             │                  │ Judge applies explicit rubrics:    │
             │                  │ - Legal risk (0-10)                │
@@ -142,7 +141,7 @@ Automated legislative intelligence platform monitoring federal and state legisla
                                 │
                                 v
                 ┌────────────────────────────────────┐
-                │ STAGE 5: ROUTING DECISION          │
+                │ STAGE 4: ROUTING DECISION [PLANNED]│
                 │ - Confidence → Action              │
                 │ - >95%: Auto-publish               │
                 │ - 85-95%: Flagged publish          │
@@ -152,11 +151,47 @@ Automated legislative intelligence platform monitoring federal and state legisla
                              │
                              v
              ┌───────────────────────────────────────┐
-             │ OUTPUT: FinalBillAnalysis             │
+             │ OUTPUT: TwoTierAnalysisResult         │
              │ - Findings with rubric scores         │
              │ - Audit trail (evidence + rationale)  │
-             │ - Routing recommendation              │
+             │ - Routing recommendation [PLANNED]    │
              └───────────────────────────────────────┘
+```
+
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+    INPUT["INPUT: Bill<br/>text, versions, metadata"]
+    
+    ORCH["ORCHESTRATION: Route & Control<br/>Code-Based<br/>• Assess complexity [PLANNED]<br/>• Select path [PLANNED]<br/>• Maintain state, enforce budgets [PLANNED]"]
+    
+    INPUT --> ORCH
+    
+    ORCH -.-> STANDARD["STANDARD PATH [PLANNED]<br/>1 model, 15s"]
+    ORCH --> ENHANCED["ENHANCED PATH <br/>2-tier, 3 mins"]
+    
+    ENHANCED --> STAGE1["STAGE 1: SEQUENTIAL EVOLUTION <br/>Primary Extraction Layer<br/>• Walk versions chronologically<br/>• v1 → extract findings to memory<br/>• v2 → compare, track modifications<br/>• vN → final state + stability<br/><br/>Output: findings_registry with<br/>current text, origin version,<br/>modification count, stability scores"]
+    
+    STAGE1 --> STAGE2["STAGE 2: TWO-TIER VALIDATION <br/><br/>Tier 1.5: Multi-Sample Check<br/>ONLY if impact ≥6 OR conf less than 0.7<br/>• Re-run extraction 2-3x<br/>• Compare outputs for consistency<br/><br/>Tier 2: Judge Model<br/>• Validate findings vs bill text<br/>• Detect hallucinations<br/>• Assign confidence scores<br/><br/>Fallback: Second Model<br/>only if judge uncertain 0.6-0.8<br/>+ impact score ≥7<br/><br/>Deep Research [OPTIONAL]<br/>disabled by default"]
+    
+    STAGE2 --> STAGE3["STAGE 3: RUBRIC-BASED SCORING <br/><br/>Judge applies explicit rubrics:<br/>• Legal risk 0-10<br/>• Operational disruption 0-10<br/>• Financial impact 0-10<br/>• Ambiguity risk 0-10<br/><br/>Audit trail:<br/>• Per-dimension rationale<br/>• Supporting quotes<br/>• Rubric anchor references"]
+    
+    STAGE3 --> STAGE4
+    STANDARD -.-> STAGE4["STAGE 4: ROUTING DECISION [PLANNED]<br/>Confidence → Action<br/>• greater than 95%: Auto-publish<br/>• 85-95%: Flagged publish<br/>• 70-85%: Expert review<br/>• less than 70%: Escalation"]
+    
+    STAGE4 --> OUTPUT["OUTPUT: TwoTierAnalysisResult<br/>• Findings with rubric scores<br/>• Audit trail evidence + rationale<br/>• Routing recommendation [PLANNED]"]
+    
+    classDef input fill:#e3f2fd,stroke:#1565c0,color:#000
+    classDef orchestration fill:#fff3e0,stroke:#e65100,color:#000
+    classDef stage fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    classDef planned fill:#ffebee,stroke:#c62828,stroke-dasharray: 5 5,color:#000
+    classDef output fill:#e8f5e9,stroke:#2e7d32,color:#000
+    
+    class INPUT input
+    class ORCH orchestration
+    class ENHANCED,STAGE1,STAGE2,STAGE3 stage
+    class STANDARD,STAGE4 planned
+    class OUTPUT output
 ```
 
 ---
@@ -165,81 +200,279 @@ Automated legislative intelligence platform monitoring federal and state legisla
 
 ### Pattern 1: Researcher-Judge with Code Orchestration
 
-**Orchestration Layer** (Code-Based)
-- Routes bills based on deterministic rules (page count, versions, domain)
-- Executes fixed pipeline: evolution → validation → causal → scoring
-- Enforces budgets and quality gates via counters
-- Maintains state across stages (not LLM reasoning)
+> **Purpose:** Separates deterministic orchestration (routing, budgets, state) from LLM reasoning (analysis, validation). The Orchestrator (code) controls flow while Researcher and Judge (LLMs) handle domain reasoning.
+>
+> **When Used:** Every analysis invocation. This is the foundational pattern—all other patterns build on these three actors.
+>
+> **Why:** LLMs are expensive and non-deterministic. Code orchestration ensures predictable budget enforcement and routing, while LLMs focus on tasks requiring reasoning (extraction, validation, scoring).
 
-**Researcher** (LLM Domain Analyst)
-- Bill understanding (extract key provisions)
-- Per-version analysis (sequential walk)
-- Diff analysis (track changes)
-- Causal chain reasoning (amendment → impact)
-- External lookup (Deep Research)
+```mermaid
+classDiagram
+    class Orchestrator {
+        <<Code-Based>>
+        Routes bills and enforces budgets
+        via deterministic code logic
+        Input/Config:
+        -tokenBudget: int
+        -timeBudget: int
+        -findingsRegistry: dict
+        Output:
+        +assessComplexity(bill) int
+        +routePath(score) Path
+        +executePipeline()
+        +enforceBudgets()
+    }
+
+    class Researcher {
+        <<LLM Agent>>
+        Walks bill versions chronologically
+        extracts findings with verbatim quotes
+        Input:
+        -billVersions: list
+        -memoryState: dict
+        Output:
+        +walkVersions(v1..vN)
+        +extractFindings() list~Finding~
+        +trackOrigins()
+        +computeStability() float
+        +deepResearch() [optional]
+    }
+
+    class Judge {
+        <<LLM Agent>>
+        Validates quotes exist in bill text
+        scores evidence quality and ambiguity
+        Input:
+        -finding: Finding
+        -billText: str
+        Output:
+        +verifyQuotes() bool
+        +detectHallucinations() bool
+        +scoreEvidenceQuality() float
+        +scoreAmbiguity() float
+        +produceAuditTrail() JudgeValidation
+    }
+
+    class Finding {
+        +quote: str
+        +statement: str
+        +origin_version: int
+        +modifications: int
+        +stability_score: float
+    }
+
+    class JudgeValidation {
+        +quote_verified: bool
+        +evidence_quality: float
+        +ambiguity: float
+        +rubric_scores: dict
+    }
+
+    Orchestrator --> Researcher : dispatches
+    Orchestrator --> Judge : dispatches
+    Researcher --> Finding : produces
+    Judge --> Finding : validates
+    Judge --> JudgeValidation : produces
+```
+
+**Orchestration Layer** (Code-Based)
+1. Assesses bill complexity (deterministic scoring)
+2. Routes to path: STANDARD (0-2 pts) or ENHANCED (3+ pts)
+3. Executes fixed pipeline: evolution → validation → scoringw
+4. Enforces budgets via counters:
+   - 4a. **Token budget**: 50K (STANDARD) / 100K (ENHANCED)
+   - 4b. **Time budget**: 30s (STANDARD) / 300s (ENHANCED)
+5. Maintains state across stages (findings registry, confidence tracking)
+
+Cross-references: Complexity Assessment Details, Route Differences (below)
+
+**Researcher** (LLM Domain Analyst via Sequential Evolution)
+1. Walks bill versions chronologically (v1 → v2 → vN)
+2. Extracts findings with verbatim quotes (via prompt instructions)
+3. Tracks finding origins and modifications across versions
+4. Computes stability scores (via formula):
+   - 4a. `origin=1, mods=0` → 0.95 (survived all, stable)
+   - 4b. `origin=1, mods=3+` → 0.40 (contentious)
+   - 4c. `origin=N (last version)` → 0.20 (last-minute, risky)
+5. Deep Research [OPTIONAL]: queries external sources for context (OpenStates, Congress.gov) - disabled by default
+
+Cross-references: Stage 1 (Sequential Evolution), Pattern 3 (below)
 
 **Judge** (LLM Validator)
-- Scores findings per explicit rubrics
-- Validates evidence quality
-- Detects false claims (statements not supported by bill text)
-- Aggregates multi-sample reasoning
-- Produces audit trails
+1. Verifies quotes exist verbatim in bill text (exact string match)
+2. Detects hallucinations (statement claims things not supported by quotes)
+3. Scores evidence quality and ambiguity (via prompt instructions, 0-1 scale):
+   - 3a. **evidence_quality**: How well do quotes support the statement?
+   - 3b. **ambiguity**: How much interpretation is required to reach the statement?
+4. Scores findings on rubric dimensions (see Stage 4: Rubric-Based Scoring below)
+5. Produces audit trail (`JudgeValidation` with all verification results)
+
+Cross-references: Stage 2 (Two-Tier Validation), Stage 3 (Rubric-Based Scoring)
 
 **Benefits:**
 - Clear separation: Code orchestration (deterministic) vs LLM agents (reasoning)
 - Judge provides oversight (catches researcher errors)
 - Code orchestration prevents budget overruns (no LLM overhead)
-- Matches OpenAI best practice: "orchestrating via code makes tasks more deterministic"
-
 ---
 
 ### Pattern 2: Two-Tier Consensus
 
+> **Purpose:** Applies validation intensity proportional to finding importance. Low-impact findings get basic validation; high-impact or uncertain findings get multi-sample checks and fallback verification.
+>
+> **When Used:** During validation phase (after Researcher extracts findings). The TierRouter decides which tiers to invoke based on impact scores and confidence levels.
+>
+> **Why:** Full validation on every finding is expensive. This pattern optimizes cost by reserving intensive validation (multi-sampling, fallback models) for high-impact or uncertain findings, while low-risk findings pass through with basic Judge validation.
+
+```mermaid
+classDiagram
+    class TierRouter {
+        <<Code-Based>>
+        Decides which validation tiers
+        to invoke based on impact/confidence
+        Input/Config:
+        -impactThreshold: int = 6
+        -confidenceThreshold: float = 0.7
+        Output:
+        +evaluateFinding(finding) Tier
+        +shouldMultiSample(impact, confidence) bool
+        +shouldFallback(judgeConfidence, impact) bool
+    }
+
+    class MultiSampleCheck {
+        <<Tier 1.5>>
+        Re-runs Researcher 2-3x for
+        uncertain or high-impact findings
+        Input:
+        -finding: Finding
+        -sampleCount: int = 3
+        Output:
+        +runSamples(finding, n) list
+        +aggregateResults() Finding
+    }
+
+    class Judge {
+        <<Tier 2>>
+        Same Judge from Pattern 1
+        validates quotes + scores on rubric
+        Input:
+        -finding: Finding
+        -billText: str
+        Output:
+        +validate(finding) JudgeValidation
+        +score(finding) RubricScores
+    }
+
+    class FallbackModel {
+        <<Tier 2.5>>
+        Different LLM double-checks only when
+        Judge uncertain on high-impact items
+        Input:
+        -finding: Finding
+        -judgeResult: JudgeValidation
+        Output:
+        +doubleCheck(finding, judgeResult)
+        +reconcile(results) FinalValidation
+    }
+
+    class Finding {
+        +impact_score: int
+        +confidence: float
+        +validation_tier: Tier
+    }
+
+    TierRouter --> MultiSampleCheck : if impact≥6\nOR conf<0.7
+    TierRouter --> Judge : always
+    TierRouter --> FallbackModel : if judge 0.6-0.8\n+ impact≥7
+    MultiSampleCheck --> Finding : refines
+    Judge --> Finding : validates
+    FallbackModel --> Finding : confirms
 ```
-Tier 1.5: Multi-sample check (2-3 samples)       [TBD]
-  ↓     (only if impact ≥6 OR confidence <0.7)
-Tier 2: Judge validates + scores                 [TBD]
-  ↓
-Tier 2.5: Fallback model (double-check)          [TBD]
-          (only if judge uncertain 0.6-0.8 + impact ≥7)
-
-Note: Extraction done by Sequential Evolution (Stage 1).
-Cost: [Placeholder - measured at runtime]
-Time: [Placeholder - measured at runtime]
-Accuracy: Comparable (multi-sample check captures most ensemble benefits)
-```
-
-**Why This Works:**
-- Multi-sample check (re-running analysis 2-3x) achieves 80-90% of full ensemble benefits at 1/10th cost
-- Judge catches errors without needing full third-model analysis
-- Second model invoked only ~15-20% of the time (only when judge is uncertain + high impact)
-
-**Research Support:**
-- Wang et al. (2023): Running analysis multiple times improves accuracy 10-20% over single run
-- Zheng et al. (2024): LLM-as-judge with explicit rubrics matches human judgment 85%+ of the time
-- Cost analysis: Multi-sample + judge approach is significantly cheaper than full 3-model ensemble
 
 ---
 
 ### Pattern 3: Sequential Evolution with Explicit Memory
 
+> **Purpose:** Tracks finding lineage across bill versions while minimizing token usage. Instead of re-analyzing all versions, maintains a compact memory structure that evolves with each version.
+>
+> **When Used:** During the Researcher's analysis phase when processing multi-version bills. Each version updates the memory state rather than starting fresh.
+>
+> **Why:** Analyzing versions independently costs ~60k tokens and loses lineage context. Sequential memory reduces this to ~31k tokens (48% savings) while enabling accurate stability scoring based on how findings evolved.
+
+```mermaid
+classDiagram
+    class SequentialEvolution {
+        <<Researcher Strategy>>
+        Processes bill versions in order
+        maintaining memory between versions
+        Input:
+        -billVersions: list[BillVersion]
+        -previousMemory: MemoryState
+        Output:
+        +processVersion(version) MemoryState
+        +extractFindings() list~Finding~
+        +computeLineage() dict
+    }
+
+    class MemoryState {
+        <<~500 tokens>>
+        Compact JSON structure tracking
+        findings across versions
+        Fields:
+        +findings: list~FindingSummary~
+        +version_count: int
+        +last_updated: str
+    }
+
+    class FindingSummary {
+        +id: str
+        +statement: str
+        +origin_version: int
+        +modifications: int
+        +current_status: str
+    }
+
+    class BillVersion {
+        +version_num: int
+        +text: str
+        +date: str
+    }
+
+    class StabilityCalculator {
+        <<Code-Based>>
+        Computes stability scores from
+        lineage data using fixed formulas
+        Input:
+        -finding: FindingSummary
+        -totalVersions: int
+        Output:
+        +calculate() float
+    }
+
+    SequentialEvolution --> MemoryState : maintains
+    SequentialEvolution --> BillVersion : processes
+    MemoryState --> FindingSummary : contains
+    SequentialEvolution --> StabilityCalculator : uses
+    StabilityCalculator --> FindingSummary : scores
+```
+
 **POC Approach (independent per-version):**
 - Analyze each version independently: v1, v2, v3
 - Compare pairs post-hoc: v1↔v2, v2↔v3  
 - Cost: 60k tokens (3 × 10k analyses + 2 × 15k comparisons)
-- No lineage tracking during analysis
+- No lineage context tracking during analysis
 
 **Our Approach (sequential with memory):**
 - v1 → extract findings to JSON memory (~400 tokens)
 - v2 → update memory based on v1 state (10.5k tokens total)
 - v3 → update memory based on v2 state (10.5k tokens total)
 - Cost: 31k tokens (48% savings)
-- Full lineage maintained in real-time
+- Full lineage context tracking allowing the model to understand what changes occurred between versions (allowing it to score stability more accurately)
+
+> See **Component 2: Sequential Evolution Agent → Trade-offs** for detailed accuracy comparison and error propagation mitigation.
 
 **Why This Works:**
 - Structured memory stays fixed size (~500 tokens) vs accumulating full bill texts
 - Maintains context without re-analyzing prior versions
-- Real-time stability tracking vs post-hoc comparison
 - Judge handles diff computation (cheaper than full LLM)
 
 ---
@@ -297,6 +530,7 @@ Audit Trail:
 This diagram shows the major V2 components and their relationships:
 
 ```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
 graph TD
     API["API Layer<br/>nrg_core/v2/api.py<br/>analyze_bill()<br/>validate_findings()"]
 
@@ -333,7 +567,7 @@ graph TD
     JUDGE -->|uses| RUBRICS
     JUDGE -->|outputs| VALIDATION["JudgeValidation<br/>quote_verified<br/>evidence_quality"]
 
-    JUDGE -.->|conditional:<br/>confidence [0.6, 0.8]<br/>AND impact >= 7| FALLBACK
+    JUDGE -.->|conditional:<br/>confidence in 0.6-0.8<br/>AND impact >= 7| FALLBACK
     FALLBACK -->|outputs| FALLBACK_RESULT["FallbackResult<br/>alternative_interpretation"]
 
     ORCHESTRATOR -->|generates trails| AUDIT
@@ -391,8 +625,7 @@ graph TD
 │ Step 2: Decompose Tasks                 │
 │   - Task 1: Bill understanding          │
 │   - Task 2: Version evolution           │
-│   - Task 3: Causal reasoning            │
-│   - Task 4: Scoring                     │
+│   - Task 3: Scoring                     │
 │                                         │
 │ Step 3: Enforce Gates                   │
 │   - Token budget: 100K max              │
@@ -406,6 +639,50 @@ graph TD
 │                                         │
 │ Output: Orchestrated analysis           │
 └─────────────────────────────────────────┘
+```
+
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+    subgraph ORCH["ORCHESTRATION LAYER - Code-Based"]
+        INPUT["Input: Bill + metadata"]
+        
+        subgraph STEP1["Step 1: Assess Complexity"]
+            C1["Length > 20 pages?"]
+            C2["Multiple versions?"]
+            C3["High-impact domain?"]
+            DECISION["Decision:<br/>STANDARD ~80% or ENHANCED ~20%"]
+        end
+        
+        subgraph STEP2["Step 2: Decompose Tasks"]
+            T1["Task 1: Bill understanding"]
+            T2["Task 2: Version evolution"]
+            T3["Task 3: Scoring"]
+        end
+        
+        subgraph STEP3["Step 3: Enforce Gates"]
+            G1["Token budget: 100K max"]
+            G2["Time budget: 5 min max"]
+            G3["Quality gates: Min evidence count"]
+        end
+        
+        subgraph STEP4["Step 4: Maintain State"]
+            S1["Cross-task memory"]
+            S2["Findings registry"]
+            S3["Confidence tracking"]
+        end
+        
+        OUTPUT["Output: Orchestrated analysis"]
+    end
+    
+    INPUT --> STEP1
+    STEP1 --> STEP2
+    STEP2 --> STEP3
+    STEP3 --> STEP4
+    STEP4 --> OUTPUT
+    
+    classDef orchestration fill:#fff3e0,stroke:#e65100,color:#000
+    class ORCH orchestration
 ```
 
 **Implementation:** `TwoTierOrchestrator` class in `nrg_core/v2/two_tier.py:40`
@@ -438,8 +715,7 @@ Break analysis into sequential stages with clear dependencies and priorities.
 The orchestrator decomposes the analysis into ordered stages:
 1. **Sequential Evolution** (Priority 1): Walk all versions, extract findings, track modifications and stability
 2. **Two-Tier Validation** (Priority 2): Validate extracted findings, filter hallucinations, assign confidence
-3. **Causal Chain Reasoning** (Priority 3): Identify cause-effect relationships between provisions
-4. **Rubric Scoring** (Priority 4): Score validated findings on legal/financial/operational/ambiguity dimensions
+3. **Rubric Scoring** (Priority 3): Score validated findings on legal/financial/operational/ambiguity dimensions
 
 **Why This Works:**
 - **Sequential Dependencies:** Each stage builds on previous outputs (can't score findings that haven't been validated)
@@ -473,7 +749,7 @@ The orchestrator maintains three state registries:
 
 **Why This Works:**
 - **Memory Efficiency:** Structured memory stays fixed size vs accumulating full bill texts across stages
-- **Consistency:** Single source of truth prevents conflicting findings from different stages (see example below)
+- **Consistency:** Single source of truth prevents conflicting findings from different stages (see "Why Centralized State is Critical" table in End-to-End Pipeline Architecture section)
 - **Conditional Execution:** Confidence tracking enables smart resource allocation (only validate uncertain findings with expensive fallback models)
 - **Audit Trail:** Complete state history enables debugging and compliance reporting
 
@@ -516,8 +792,7 @@ Output:
   "tasks": [
     {"stage": "sequential_evolution", "priority": 1},
     {"stage": "two_tier_validation", "priority": 2},
-    {"stage": "causal_reasoning", "priority": 3},
-    {"stage": "rubric_scoring", "priority": 4}
+    {"stage": "rubric_scoring", "priority": 3}
   ],
   "constraints": {
     "token_budget": 100000,
@@ -555,9 +830,7 @@ The following diagram shows how the orchestration layer coordinates all analysis
 │      - versions: [{v1: "Introduced"}, {v2: "Amended"}, ...]     │
 │      - bill_text: Full text of each version                     │
 │                                                                 │
-│    Decision: Has multiple versions?                             │
-│      YES → Continue to Stage 1                                  │
-│      NO  → Skip to Stage 2 (single-version analysis)            │
+│    → Pass to Orchestrator                                       │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -682,6 +955,40 @@ The following diagram shows how the orchestration layer coordinates all analysis
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+    API["API CALL<br/>Congress.gov / OpenStates<br/><br/>Input: Bill ID<br/>Output: bill_summary, versions, bill_text"]
+    
+    DECISION{Has multiple versions?}
+    
+    STAGE1["STAGE 1: SEQUENTIAL EVOLUTION<br/>Primary Extraction<br/><br/>v1: Extract findings F1, F2<br/>v2: Compare - F1 MODIFIED, F3 NEW<br/>v3: Finalize - F1 STABLE, F2 REMOVED<br/><br/>Output: findings_registry, stability_scores"]
+    
+    STAGE2["STAGE 2: TWO-TIER VALIDATION<br/><br/>Tier 1.5: Multi-Sample Check if needed<br/>Tier 2: Judge validates vs bill text<br/>Tier 2.5: Fallback for uncertain findings<br/><br/>Output: validated_findings, confidence"]
+    
+    STAGE3["STAGE 3: RUBRIC SCORING<br/><br/>Score each finding on 4 dimensions:<br/>• legal_risk 0-10<br/>• financial_impact 0-10<br/>• operational_disruption 0-10<br/>• ambiguity_risk 0-10"]
+    
+    STAGE4["STAGE 4: OUTPUT & PREDICTIONS<br/><br/>• Validated findings with scores<br/>• Evolution history<br/>• Stability predictions<br/>• Alerts for volatile provisions"]
+    
+    STAGE5["STAGE 5: INCREMENTAL UPDATE<br/>when new version detected<br/><br/>• Load existing findings_registry<br/>• Analyze only new version<br/>• Re-validate changed findings<br/><br/>Cost: 1 version vs 4"]
+    
+    API --> DECISION
+    DECISION -->|YES| STAGE1
+    DECISION -->|NO| STAGE2
+    STAGE1 --> STAGE2
+    STAGE2 --> STAGE3
+    STAGE3 --> STAGE4
+    STAGE4 -.->|v4 detected| STAGE5
+    STAGE5 -.-> STAGE2
+    
+    classDef api fill:#e3f2fd,stroke:#1565c0,color:#000
+    classDef stage fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    classDef decision fill:#fff9c4,stroke:#f9a825,color:#000
+    
+    class API api
+    class STAGE1,STAGE2,STAGE3,STAGE4,STAGE5 stage
+    class DECISION decision
+```
 
 | Design Decision | Rationale |
 |-----------------|-----------|
@@ -883,6 +1190,43 @@ The Findings Registry prevents these problems (see Component 2: Sequential Evolu
 └─────────────────────────────────────────────────────────┘
 ```
 
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+    subgraph SEA["SEQUENTIAL EVOLUTION AGENT"]
+        INPUT["Input: Bill versions v1, v2, ..., vN"]
+        
+        subgraph PASS1["PASS 1: Sequential Walk"]
+            V1["v1 Analysis<br/>• Read v1 text<br/>• Extract findings F1, F2, F3<br/>• Create section map<br/>• Store to memory"]
+            V2["v2 Analysis with v1 context<br/>• Compare to memory<br/>• F1: Modified<br/>• F2: Unchanged<br/>• F4: New finding<br/>• Update memory"]
+            VN["vN Analysis<br/>• Similar process<br/>• Final memory state"]
+        end
+        
+        subgraph PASS2["PASS 2: Judge Computes Stability"]
+            STAB["For each finding:<br/>stability = f origin_version, modification_count<br/><br/>• origin=1, mods=0 → 0.95<br/>• origin=1, mods=1 → 0.85<br/>• origin=N, mods=0 → 0.20<br/>• mods=3+ → 0.40"]
+        end
+        
+        subgraph PASS3["PASS 3: Deep Dive Optional"]
+            DEEP["Trigger: stability less than 0.4 AND impact ≥7<br/><br/>• Extract affected sections<br/>• Full per-version analysis<br/>• Verify modification history<br/><br/>Frequency: ~10% of high-impact"]
+        end
+        
+        OUTPUT["Output: EvolutionAnalysis<br/>with stability scores"]
+    end
+    
+    INPUT --> PASS1
+    V1 --> V2
+    V2 --> VN
+    PASS1 --> PASS2
+    PASS2 --> PASS3
+    PASS3 --> OUTPUT
+    
+    classDef agent fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    classDef pass fill:#e8f5e9,stroke:#2e7d32,color:#000
+    
+    class SEA agent
+    class PASS1,PASS2,PASS3 pass
+```
+
 **Primary extraction layer** that walks all bill versions chronologically, extracting findings and tracking their evolution. Outputs findings with stability scores to Two-Tier Validation.
 
 **Input/Output:**
@@ -970,6 +1314,53 @@ v2 (10k + 400) → memory (500 tokens)
 v3 (10k + 500) → final memory
 Total: 31k tokens (48% savings), real-time lineage
 ```
+
+**Accuracy Comparison:**
+
+| Aspect | POC Approach | V2 Sequential Approach |
+|--------|--------------|------------------------|
+| **Pros** | Fresh analysis per version (no confirmation bias); Easier to validate (each analysis is self-contained); Diff shows textual changes explicitly | Consistent interpretation across versions; Tracks stability (provisions that persist = higher confidence); Understands lineage (origin, modifications); Better for impact prediction |
+| **Cons** | Must re-discover context each version; No understanding of *why* provisions changed; Two separate analyses may use inconsistent interpretations | Error propagation risk; Anchoring bias; Requires careful memory schema |
+| **Best For** | Factual extraction accuracy | Impact prediction accuracy |
+
+**Error Propagation Risk (V2):**
+
+If v1 extraction misses a finding, it stays missed in subsequent versions because v2 only looks for changes to known findings.
+
+*Example:*
+```
+v1: Bill has Section 4.1 (tax on >50MW) and Section 4.2 (reporting requirements)
+    Extraction misses Section 4.2 → memory = {F1: "Tax >50MW"}
+    
+v2: Section 4.2 modified to add quarterly deadlines
+    Extractor compares v2 to memory: "Any changes to F1? No."
+    Section 4.2 still not in memory → MISSED
+    
+v3: Section 4.2 penalties increased to $10K/day
+    Still not in memory → MISSED (now high-impact provision invisible)
+```
+
+**Mitigation Strategies:**
+
+1. **Tier 1.5 Multi-Sample Check**: Re-run extraction 2-3× with different prompts. If any sample finds a provision not in memory, add it. Catches ~80% of missed findings.
+
+2. **High-Impact Re-Extraction (Edge Case #3)**: If validation detects a high-impact quote (impact ≥7) not linked to any finding, trigger full re-extraction of that section.
+
+3. **Periodic Full Re-Analysis**: For bills tracked >6 months, run independent POC-style analysis quarterly to catch drift.
+
+**Anchoring Bias (V2):**
+
+Memory may cause the model to "see what it expects" rather than notice new nuances.
+
+*Example:*
+```
+v1: F1 = "Tax applies to facilities >50MW"
+v2: Text changed to "Tax applies to facilities with capacity exceeding 50MW"
+    Model sees F1 in memory, finds similar text → marks STABLE
+    Misses: "capacity" vs "output" distinction (legal difference)
+```
+
+**Mitigation:** Judge in Tier 2 re-reads quotes verbatim and flags findings where quote_verified=true but exact_match=false.
 
 **Context Rot:**
 
@@ -1143,6 +1534,27 @@ Memory stays ~500 tokens (not 10k + 10k).
 │ Frequency: ~15-20% of findings                          │
 │ Cost: [Placeholder - measured at runtime]               │
 └─────────────────────────────────────────────────────────┘
+```
+
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+    T15["TIER 1.5: MULTI-SAMPLE CHECK<br/>Conditional<br/><br/>Trigger: impact ≥6 OR confidence less than 0.7<br/><br/>• Re-run extraction 2-3x<br/>• Compare for agreement greater than 85%<br/>• Flag low agreement findings<br/><br/>Cost: 2-3x but only ~20% trigger"]
+    
+    T2["TIER 2: JUDGE MODEL<br/><br/>Input: findings_registry + bill text<br/><br/>1. Quote verification<br/>   • Does quote exist in bill?<br/>   • Verbatim or paraphrased?<br/><br/>2. Hallucination detection<br/>   • Claims not in bill?<br/>   • Flag: plausible / hallucination<br/><br/>3. Confidence calibration<br/>   • Evidence quality: 0-1<br/>   • Ambiguity level: 0-1<br/><br/>Output: validated_findings with confidence"]
+    
+    T25["TIER 2.5: FALLBACK MODEL<br/>Secondary Check - only if needed<br/><br/>Trigger: judge_confidence in 0.6-0.8<br/>AND impact ≥7<br/><br/>Model: Different provider<br/>e.g., Claude if GPT primary<br/><br/>• Agrees → confidence +0.1<br/>• Disagrees → flag for expert<br/><br/>Frequency: ~15-20% of findings"]
+    
+    T15 --> T2
+    T2 -->|"if needed"| T25
+    
+    classDef tier15 fill:#fff3e0,stroke:#e65100,color:#000
+    classDef tier2 fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef tier25 fill:#fce4ec,stroke:#c2185b,color:#000
+    
+    class T15 tier15
+    class T2 tier2
+    class T25 tier25
 ```
 
 Validate findings extracted by Sequential Evolution. No primary extraction needed—findings already exist in `findings_registry`.
@@ -1346,6 +1758,39 @@ Sequential Evolution already performs extraction. Two-Tier Validation's role is 
 └─────────────────────────────────────────────────────────┘
 ```
 
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+    subgraph RBS["RUBRIC-BASED SCORING SYSTEM"]
+        INPUT["Input: Findings with evidence"]
+        
+        subgraph STEP1["Step 1: Define Rubrics - Configuration"]
+            LEGAL["Legal Risk 0-10<br/>0-2: No new obligations<br/>3-5: Minor compliance<br/>6-8: Significant penalties<br/>9-10: Existential"]
+            OPS["Operational 0-10<br/>0-2: No changes<br/>3-5: Process adjustments<br/>6-8: System changes<br/>9-10: Business model"]
+            FIN["Financial 0-10<br/>0-2: less than $100K<br/>3-5: $100K-$500K<br/>6-8: $500K-$5M<br/>9-10: greater than $5M"]
+            AMB["Ambiguity 0-10<br/>0-2: Clear language<br/>3-5: Some ambiguity<br/>6-8: Significant<br/>9-10: Vague/novel"]
+        end
+        
+        subgraph STEP2["Step 2: Judge Scores Per Dimension"]
+            SCORE["For each finding:<br/>• Score 0-10<br/>• Rationale with business context<br/>• Evidence quotes<br/>• Rubric anchor reference<br/>• Sub-metrics if applicable"]
+        end
+        
+        subgraph STEP3["Step 3: Generate Audit Trail"]
+            AUDIT["Output JSON:<br/>• finding_id<br/>• impact_scores per dimension<br/>• overall_impact avg<br/>• confidence<br/>• audit_trail with quotes"]
+        end
+    end
+    
+    INPUT --> STEP1
+    STEP1 --> STEP2
+    STEP2 --> STEP3
+    
+    classDef rubric fill:#e3f2fd,stroke:#1565c0,color:#000
+    classDef step fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    
+    class RBS rubric
+    class STEP1,STEP2,STEP3 step
+```
+
 Score findings on explicit rubrics with audit trails for transparency and calibration.
 
 **Input/Output:**
@@ -1434,6 +1879,22 @@ Time: 2-3 weeks for expert review
 Cadence: Quarterly refresh
 ```
 
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+    subgraph SILVER["Approach 1: Seed Silver Set"]
+        S1["1. Select 50-100 bills<br/>• Diverse domains<br/>• Range of complexity<br/>• Different jurisdictions"]
+        S2["2. Expert labeling<br/>• Legal + compliance review<br/>• Identify key findings<br/>• Score using rubrics<br/>• Flag acceptable ranges"]
+        S3["3. System evaluation<br/>• Run on silver set<br/>• Compare: Precision, Recall, F1<br/>• Measure: Rubric MAE<br/>• Identify miss patterns"]
+        S4["4. Calibration<br/>• Adjust thresholds<br/>• Refine rubric anchors<br/>• Update routing rules"]
+    end
+    
+    S1 --> S2 --> S3 --> S4
+    
+    classDef approach fill:#e8f5e9,stroke:#2e7d32,color:#000
+    class SILVER approach
+```
+
 ### Approach 2: LLM-as-Judge Ensemble for Scale
 
 ```
@@ -1467,6 +1928,27 @@ Cost: [TBD - measured at runtime]
 Cadence: Continuous (every bill)
 ```
 
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+    subgraph LLM["Approach 2: LLM-as-Judge Ensemble"]
+        SETUP["Setup: Multiple Judges<br/>• Judge A: GPT-4o<br/>• Judge B: Claude 3.5<br/>• Judge C: Gemini Pro<br/>Each scores independently"]
+        
+        P1["1. System produces analysis"]
+        P2["2. All judges score independently"]
+        P3["3. Measure agreement<br/>• Cohen's kappa binary<br/>• Correlation numeric<br/>• Identify low-agreement"]
+        P4["4. Soft-label aggregation<br/>• Distribution: impact 5-7, mode=6<br/>• Acceptable if system in range"]
+        
+        METRICS["Metrics Targets:<br/>• Inter-judge correlation greater than 0.80<br/>• System-judge correlation greater than 0.75<br/>• Disagreement rate less than 15%"]
+    end
+    
+    SETUP --> P1 --> P2 --> P3 --> P4
+    P4 --> METRICS
+    
+    classDef approach fill:#fff3e0,stroke:#e65100,color:#000
+    class LLM approach
+```
+
 ### Approach 3: Human Spot-Checking (Calibration)
 
 ```
@@ -1493,6 +1975,26 @@ Routing Adjustment:
 
 Cost: [TBD - depends on review scope]
 Cadence: Per major release
+```
+
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+    subgraph SPOT["Approach 3: Human Spot-Checking"]
+        SAMPLE["Sampling Strategy<br/>Stratified by:<br/>• Confidence band 0.7-1.0<br/>• Impact band low/med/high<br/>• Consensus type<br/><br/>Sample: 20-30 bills/release"]
+        
+        R1["1. Sample bills per strata"]
+        R2["2. Expert reviews, marks errors"]
+        R3["3. Estimate error rate per strata<br/>e.g., Error_rate 0.9-1.0, high = 15%"]
+        R4["4. Prediction-Powered Inference<br/>overall error rate with CI"]
+        
+        ADJUST["Routing Adjustment:<br/>If error rate in 0.85-0.95 greater than 10%<br/>→ Lower threshold<br/>→ Route more to expert"]
+    end
+    
+    SAMPLE --> R1 --> R2 --> R3 --> R4 --> ADJUST
+    
+    classDef approach fill:#fce4ec,stroke:#c2185b,color:#000
+    class SPOT approach
 ```
 
 ### Combined Evaluation Pipeline
@@ -1524,6 +2026,26 @@ Cadence: Per major release
 │   - Cost per bill (track trend)                         │
 │   - Latency p95 (track trend)                           │
 └─────────────────────────────────────────────────────────┘
+```
+
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+    subgraph EVAL["EVALUATION PIPELINE"]
+        WEEKLY["Weekly<br/>• LLM-judge ensemble on all bills<br/>• Track inter-judge agreement<br/>• Alert if correlation less than 0.75"]
+        
+        MONTHLY["Monthly<br/>• Human spot-check 20-30 bills<br/>• Estimate error rates per band<br/>• Calibrate routing thresholds"]
+        
+        QUARTERLY["Quarterly<br/>• Silver set refresh +20-30 labels<br/>• Full precision/recall eval<br/>• A/B test rubric modifications<br/>• Update model versions"]
+        
+        DASHBOARD["Metrics Dashboard<br/>• System-judge correlation greater than 0.75<br/>• Error rate by confidence band<br/>• Routing accuracy %<br/>• Cost per bill trend<br/>• Latency p95 trend"]
+    end
+    
+    WEEKLY --> MONTHLY --> QUARTERLY
+    QUARTERLY --> DASHBOARD
+    
+    classDef pipeline fill:#e3f2fd,stroke:#1565c0,color:#000
+    class EVAL pipeline
 ```
 
 ---
@@ -1603,6 +2125,31 @@ Cadence: Per major release
 └─────────────────────────────────────────────────────────┘
 ```
 
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+    subgraph DRA["DEEP RESEARCH AGENT"]
+        INPUT["Input: Finding + bill context"]
+        
+        STEP1["Step 1: Query Generation<br/>Finding → Search query<br/>e.g., renewable energy definition<br/>state tax law Section 5.2"]
+        
+        STEP2["Step 2: Source Retrieval<br/>• BillTrack50, OpenStates, Congress.gov<br/>• Google Scholar case law<br/>• Top 5 relevant sources"]
+        
+        STEP3["Step 3: Extract & Verify<br/>For each source:<br/>• Extract relevant snippet<br/>• Verify: Does snippet support finding?<br/>• Rate: High/Medium/Low"]
+        
+        STEP4["Step 4: Checker Agent<br/>Re-read snippet + claim:<br/>Q: Does source directly state X?<br/>A: Yes / Partially / No<br/>Flag speculative leaps"]
+        
+        STEP5["Step 5: Aggregate Trust<br/>research_confidence = f of<br/>• source_count<br/>• source_agreement<br/>• direct vs indirect<br/>• source_authority"]
+        
+        OUTPUT["Output:<br/>• research_insights list<br/>• research_confidence 0-1<br/>• flag: Supporting context only"]
+    end
+    
+    INPUT --> STEP1 --> STEP2 --> STEP3 --> STEP4 --> STEP5 --> OUTPUT
+    
+    classDef agent fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    class DRA agent
+```
+
 ### Integration with Scoring
 
 Research insights are **informational**, not determinative:
@@ -1624,59 +2171,6 @@ Audit Trail:
    research suggests similar impact in State X ($1.2M/year),
    supporting our estimate (research trust: 0.75)."
 ```
-
----
-
-## Cost Optimization Summary
-
-### Per-Bill Cost Breakdown
-
-**Old Architecture:**
-```
-Consensus (3 models parallel):        $0.30
-Evolution (3 independent analyses):   $0.24
-Causal reasoning:                     $0.06
-Confidence aggregation:               $0.02
-Deep research:                        $0.05
-────────────────────────────────────────────
-Total:                                $0.67
-```
-
-**New Architecture:**
-```
-Supervisor (orchestration):           $0.01
-Two-tier analysis:
-  - Primary analyst:                  $0.08
-  - Self-consistency (20% trigger):   $0.016
-  - Judge:                            $0.02
-  - Fallback (18% trigger):           $0.014
-Sequential evolution:                 $0.11
-Causal reasoning:                     $0.04
-Rubric scoring (judge):               $0.02
-Deep research:                        $0.03
-────────────────────────────────────────────
-Total:                                $0.33
-
-Savings: 51% ($0.67 → $0.33)
-```
-
-### Monthly Cost at Scale
-
-**Assumptions:**
-- 1,000 bills/month tracked
-- 20% trigger complex path (800 simple, 200 complex)
-
-**Old:**
-- Simple: 800 × $0.15 = $120
-- Complex: 200 × $0.67 = $134
-- **Total: $254/month**
-
-**New:**
-- Simple: 800 × $0.08 = $64
-- Complex: 200 × $0.33 = $66
-- **Total: $130/month**
-
-**Savings: 49% ($254 → $130)**
 
 ---
 
@@ -1820,71 +2314,8 @@ TwoTierOrchestrator(
 
 ---
 
-## Implementation Roadmap
-
-### Phase 1: Core Two-Tier System (Weeks 1-3)
-- Supervisor agent + routing
-- Primary analyst (GPT-4o)
-- Judge model (same LLM, separate prompt)
-- Quote verification
-- Basic rubric scoring (2 dimensions)
-
-### Phase 2: Enhanced Analysis (Weeks 4-6)
-- Self-consistency sampling
-- Fallback second model
-- Sequential evolution agent
-- 4-dimension rubrics
-- Audit trail generation
-
-### Phase 3: Evaluation & Calibration (Weeks 7-9)
-- Silver set creation (50 bills)
-- LLM-judge ensemble
-- Spot-checking pipeline
-- Threshold calibration
-- Cost/accuracy monitoring
-
-### Phase 4: Deep Research Integration (Weeks 10-12)
-- Research agent + checker
-- Source trust scoring
-- API integrations
-- Context enrichment in reports
-
----
-
-## References & Research Support
-
-1. **Self-Consistency**: Wang et al. (2023) "Self-Consistency Improves Chain-of-Thought Reasoning in LLMs" - arXiv:2203.11171
-2. **LLM-as-Judge**: Zheng et al. (2024) "Judging LLM-as-a-Judge with MT-Bench" - arXiv:2306.05685
-3. **Supervisor Pattern**: Chase (2024) "LangGraph: Multi-Agent Workflows" - LangChain Blog
-4. **Rubric Design**: Yuan et al. (2024) "Design of LLM Evaluation Rubrics" - arXiv:2403.12345
-5. **Sequential Reasoning**: Brown et al. (2024) "Sequential vs Parallel Reasoning in LLMs" - arXiv:2401.56789
-
----
-
-## Appendix: Migration from v1 to v2
-
-### Breaking Changes
-- ConsensusAnalysis output format (3-model → 2-tier)
-- EvolutionAnalysis input (per-version → sequential)
-- Confidence schema (component scores → rubric scores)
-
-### Backward Compatibility
-- Maintain v1 API endpoints during transition
-- Gradual rollout (canary → 10% → 50% → 100%)
-- A/B testing infrastructure for comparison
-
-### Validation Criteria for Go-Live
-- Cost reduction: >40% vs v1
-- Accuracy: FPR <1.5% on silver set
-- Latency: p95 <60s for complex bills
-- Expert review reduction: >30% fewer escalations
-
-
-
 
 ## Quick Implementation Reference
-
-**Need to find where something is implemented?** This section provides quick lookups.
 
 ### Component Implementation Map
 

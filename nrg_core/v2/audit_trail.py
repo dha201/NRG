@@ -1,4 +1,3 @@
-# nrg_core/v2/audit_trail.py
 """
 Audit Trail Generator - Creates compliance-ready documentation of analysis.
 

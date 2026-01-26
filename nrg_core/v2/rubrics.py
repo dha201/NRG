@@ -1,4 +1,3 @@
-# nrg_core/v2/rubrics.py
 """
 Rubric Definitions for Phase 1 - Standardized scoring scales.
 

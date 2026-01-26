@@ -101,21 +101,6 @@ flowchart TD
 
 ---
 
-## Production Ready Checklist
-
-| Component | Current State | Production Need |
-|-----------|--------------|----------------|
-| Architecture | Monolithic | Microservices |
-| Database | SQLite | PostgreSQL |
-| Authentication | None | User auth + RBAC |
-| Monitoring | Console logs | Structured logging + alerts |
-| Testing | Manual | Unit + integration tests |
-| Deployment | Local script | CI/CD pipeline |
-| Scheduling | Manual run | Cron/scheduler |
-| Cost Tracking | None | LLM usage monitoring |
-
----
-
 ## Anticipated Questions
 
 **Q: How accurate is the LLM?**  

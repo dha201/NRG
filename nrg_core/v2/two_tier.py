@@ -1,4 +1,3 @@
-# nrg_core/v2/two_tier.py
 """
 Two-Tier Validation Orchestrator - Validates findings from Sequential Evolution.
 
