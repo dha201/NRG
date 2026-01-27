@@ -34,7 +34,7 @@ Build a legislative intelligence agent that automates monitoring, analysis, and 
 
 ## Assumptions
 
-- Solution will be deployed on NRG cloud infrastructure using NRG service providers
+- Solution will be deployed on NRG cloud infrastructure using NRG service providers (GCP)
 - Detailed requirements will be mutually agreed upon to fit available resources
 - Services will be delivered between Jan 2026 and June 2026
 - Bill information and analysis stored in data lake can be used as RAG corpus by NRG for chatbot

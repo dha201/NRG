@@ -15,7 +15,6 @@
 
 ## Section 1: Business Problem & Goals
 
-### Opening Hook
 > "NRG's Legal team manually tracks legislative bills across 50 states plus federal. We're building an AI system to automate this - from discovery to analysis to actionable recommendations."
 
 ### Key Points
@@ -265,6 +264,22 @@ When we fetch a bill from the API, we get the **latest version only**. But bills
 
 > **This is WHY we implement version tracking. POC 2 and v2 differ in HOW they do it - we'll cover this in the architecture section.**
 
+### 2E. Bill Versions vs. Bill Changes - Key Distinction
+
+| Aspect | Bill Versions | Bill Changes |
+|--------|---------------|--------------|
+| **What causes it** | Legislative action (committee votes, floor passage) | Anything we detect between pipeline runs |
+| **Created by** | Congress/Legislature | Our change detection system |
+| **Examples** | Introduced → Engrossed → Enrolled | Text edit, status update, new amendment, new version |
+| **Frequency** | Major milestones (3-7 per bill) | Any modification (could be daily) |
+| **What we do** | Sequential Evolution analysis (Stage 1) | Hash comparison + diff generation |
+
+**In short:**
+- **Version** = Official legislative snapshot (formal milestone in the process)
+- **Change** = Any difference we detect between runs (could be a new version, OR just a text fix/status update)
+
+A "new version" is one type of change. When detected, it triggers full Sequential Evolution analysis. Other changes (text fixes, status updates) get lightweight diff analysis only.
+
 ---
 
 ## Section 3: POC 2 Walkthrough
@@ -274,31 +289,52 @@ When we fetch a bill from the API, we get the **latest version only**. But bills
 > **Reference:** `docs/poc doc/poc 2 architecture.md` - Pipeline Flow diagram
 
 **7-Phase Pipeline:**
+
+```mermaid
+flowchart TD
+    P1([PHASE 1: INITIALIZATION])
+    P1_DESC[Load config, environment,<br/>database, NRG business context]
+
+    P2([PHASE 2: DATA COLLECTION])
+    P2_DESC[Fetch from APIs:<br/>Congress.gov, Regulations.gov,<br/>OpenStates, LegiScan]
+
+    P3([PHASE 3: VERSION TRACKING])
+    P3_DESC[For each bill: fetch all versions,<br/>extract PDF text]
+
+    P4([PHASE 4: CHANGE DETECTION])
+    P4_DESC[Compare to cached data<br/>using hash comparison]
+
+    P5{PHASE 5: ANALYSIS}
+    P5A[Path A: Has Versions<br/>Analyze each independently<br/>+ compare pairs]
+    P5B[Path B: No Versions<br/>Analyze current bill<br/>+ detect changes from cache]
+
+    P6([PHASE 6: OUTPUT])
+    P6_DESC[Generate Reports:<br/>JSON, Markdown, DOCX]
+
+    P7([PHASE 7: CACHE UPDATE])
+    P7_DESC[Save current state<br/>for next run]
+
+    P1 --> P1_DESC --> P2
+    P2 --> P2_DESC --> P3
+    P3 --> P3_DESC --> P4
+    P4 --> P4_DESC --> P5
+    P5 -->|versions exist| P5A
+    P5 -->|no versions| P5B
+    P5A --> P6
+    P5B --> P6
+    P6 --> P6_DESC --> P7
+    P7 --> P7_DESC
+
+    style P1 fill:#4CAF50,color:#fff
+    style P2 fill:#2196F3,color:#fff
+    style P3 fill:#9C27B0,color:#fff
+    style P4 fill:#FF9800,color:#fff
+    style P5 fill:#E91E63,color:#fff
+    style P6 fill:#00BCD4,color:#fff
+    style P7 fill:#607D8B,color:#fff
 ```
-PHASE 1: INITIALIZATION
-    Load config, environment, database, NRG business context
-           ↓
-PHASE 2: DATA COLLECTION
-    Fetch from 4 sources: Congress.gov, Regulations.gov, OpenStates, (LegiScan fallback)
-           ↓
-PHASE 3: VERSION TRACKING (if enabled)
-    For each bill: fetch all versions, extract PDF text
-    Output: item['versions'] = [{v1}, {v2}, {v3}...]
-           ↓
-PHASE 4: CHANGE DETECTION (if enabled)
-    Compare to cached data using hash comparison
-    Output: {has_changes, is_new, changes}
-           ↓
-PHASE 5A/5B: ANALYSIS
-    Path A (has versions): Analyze each version independently + compare pairs
-    Path B (no versions): Analyze current bill + detect changes from cache
-           ↓
-PHASE 6: OUTPUT GENERATION
-    Console (Rich), JSON, Markdown, DOCX (pandoc)
-           ↓
-PHASE 7: CACHE UPDATE
-    Save current state for next run
-```
+
+**POC 2 Problem:** Each version analyzed independently (no memory between versions)
 
 **API Return Schema Reference:**
 > **Reference:** `nrg_core/models.py` - `Bill`, `BillVersion`, `Analysis` dataclasses
@@ -425,28 +461,45 @@ nrg_analysis_20260126_175535/
 
 **Researcher-Judge with Code Orchestration:**
 
+```mermaid
+flowchart TD
+    subgraph ORCH[ORCHESTRATION - Code-Based, Deterministic]
+        ROUTE[Route based on complexity]
+        BUDGET[Enforce token/time budgets]
+        STATE[Maintain state across stages]
+    end
+
+    subgraph S1[STAGE 1: RESEARCHER]
+        S1A[Extract findings<br/>from bill text]
+        S1B[Track across versions<br/>with memory]
+        S1C[Compute stability<br/>scores]
+        S1A --> S1B --> S1C
+    end
+
+    subgraph S2[STAGE 2: JUDGE]
+        S2A[Verify quotes exist<br/>in bill text]
+        S2B[Detect hallucinations]
+        S2C[Score on rubrics<br/>with evidence]
+        S2A --> S2B --> S2C
+    end
+
+    subgraph S3[STAGE 3: OUTPUT]
+        S3A[Generate audit trail]
+        S3B[Create reports<br/>JSON/MD/DOCX]
+        S3A --> S3B
+    end
+
+    ORCH --> S1
+    S1 --> S2
+    S2 --> S3
+
+    style ORCH fill:#FF9800,color:#000
+    style S1 fill:#4CAF50,color:#fff
+    style S2 fill:#9C27B0,color:#fff
+    style S3 fill:#2196F3,color:#fff
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ ORCHESTRATION (Code-Based, Deterministic)                    │
-│ - Route based on complexity                                  │
-│ - Enforce token/time budgets                                 │
-│ - Maintain state across stages                               │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-         ┌─────────────────┴─────────────────┐
-         │                                   │
-         v                                   v
-   STAGE 1: RESEARCHER              STAGE 2: JUDGE
-   (Sequential Evolution)           (Two-Tier Validation)
-   - Extract findings               - Verify quotes exist
-   - Track across versions          - Detect hallucinations
-   - Compute stability              - Score on rubrics
-         │                                   │
-         └─────────────────┬─────────────────┘
-                           v
-                    STAGE 3: OUTPUT
-                    (Audit Trail + Reports)
-```
+
+**Key Difference from POC 2:** Code orchestrates LLM calls (not LLM deciding what to do next)
 
 ### 4A. Stage 1: Sequential Evolution
 
@@ -457,13 +510,48 @@ nrg_analysis_20260126_175535/
 
 **v2 Solution:** Walk versions chronologically with ~500-token memory state
 
-```
-v1 → Extract findings F1, F2, F3 → store to memory (~400 tokens)
-v2 → Compare to memory → mark as STABLE/MODIFIED/NEW → update memory
-v3 → Compare to memory → final state + full evolution history
+```mermaid
+flowchart LR
+    subgraph V1[Version 1: Introduced]
+        V1_IN[Bill Text v1]
+        V1_LLM[LLM Extract<br/>Findings]
+        V1_OUT[F1, F2, F3]
+        V1_IN --> V1_LLM --> V1_OUT
+    end
+
+    subgraph MEM1[Memory ~400 tokens]
+        M1[F1: origin=1, mods=0<br/>F2: origin=1, mods=0<br/>F3: origin=1, mods=0]
+    end
+
+    subgraph V2[Version 2: Committee]
+        V2_IN[Bill Text v2]
+        V2_LLM[LLM Compare<br/>to Memory]
+        V2_OUT[F1: STABLE<br/>F2: MODIFIED<br/>F3: STABLE]
+        V2_IN --> V2_LLM --> V2_OUT
+    end
+
+    subgraph MEM2[Memory Updated]
+        M2[F1: origin=1, mods=0<br/>F2: origin=1, mods=1<br/>F3: origin=1, mods=0]
+    end
+
+    subgraph V3[Version 3: Enrolled]
+        V3_IN[Bill Text v3]
+        V3_LLM[LLM Compare<br/>+ Compute Stability]
+        V3_OUT[Final Registry<br/>+ Stability Scores]
+        V3_IN --> V3_LLM --> V3_OUT
+    end
+
+    V1_OUT --> MEM1 --> V2
+    V2_OUT --> MEM2 --> V3
+
+    style V1 fill:#4CAF50,color:#fff
+    style V2 fill:#FF9800,color:#fff
+    style V3 fill:#9C27B0,color:#fff
+    style MEM1 fill:#E3F2FD,color:#000
+    style MEM2 fill:#E3F2FD,color:#000
 ```
 
-**Token Savings:** 31K tokens vs 60K = **48% reduction**
+**Token Savings:** 31K tokens vs 60K = **48% reduction** (memory carries forward, no redundant extraction)
 
 **Why this design choice:**
 
@@ -504,6 +592,60 @@ v3 → Compare to memory → final state + full evolution history
 > **Implementation:** `nrg_core/v2/two_tier.py`
 
 **The Problem v2 Solves:** No validation = hallucination risk + no evidence trail
+
+```mermaid
+flowchart TD
+    INPUT[Finding from Stage 1<br/>Statement + Quotes + Impact]
+
+    subgraph T15[TIER 1.5: Multi-Sample Check]
+        T15_CHECK{Impact ≥ 6 OR<br/>Confidence < 0.7?}
+        T15_RUN[Run 2-3x with<br/>different prompts]
+        T15_COMPARE{Results agree<br/>>85%?}
+        T15_PASS[Pass to Tier 2]
+        T15_FLAG[Flag: Inconsistent]
+    end
+
+    subgraph T2[TIER 2: Judge Validation - ALWAYS RUNS]
+        T2_QUOTE{Quotes exist<br/>VERBATIM in bill?}
+        T2_HALLUC{Statement matches<br/>quote meaning?}
+        T2_SCORE[Score: Evidence Quality<br/>Ambiguity, Confidence]
+    end
+
+    subgraph T25[TIER 2.5: Fallback Model]
+        T25_CHECK{Confidence 0.6-0.8<br/>AND Impact ≥ 7?}
+        T25_CLAUDE[Get 2nd opinion<br/>from Claude]
+        T25_AGREE{Models agree?}
+    end
+
+    OUTPUT_PASS[✓ VALIDATED<br/>Include in report]
+    OUTPUT_FAIL[✗ HALLUCINATION<br/>Filter from report]
+    OUTPUT_REVIEW[⚠ HUMAN REVIEW<br/>Flag for expert]
+
+    INPUT --> T15_CHECK
+    T15_CHECK -->|Yes| T15_RUN --> T15_COMPARE
+    T15_CHECK -->|No| T15_PASS
+    T15_COMPARE -->|Yes| T15_PASS
+    T15_COMPARE -->|No| T15_FLAG --> OUTPUT_REVIEW
+
+    T15_PASS --> T2_QUOTE
+    T2_QUOTE -->|No| OUTPUT_FAIL
+    T2_QUOTE -->|Yes| T2_HALLUC
+    T2_HALLUC -->|Yes - Hallucination| OUTPUT_FAIL
+    T2_HALLUC -->|No| T2_SCORE
+
+    T2_SCORE --> T25_CHECK
+    T25_CHECK -->|Yes| T25_CLAUDE --> T25_AGREE
+    T25_CHECK -->|No, High Confidence| OUTPUT_PASS
+    T25_AGREE -->|Yes| OUTPUT_PASS
+    T25_AGREE -->|No| OUTPUT_REVIEW
+
+    style T15 fill:#FFF3E0,color:#000
+    style T2 fill:#E8F5E9,color:#000
+    style T25 fill:#E3F2FD,color:#000
+    style OUTPUT_PASS fill:#4CAF50,color:#fff
+    style OUTPUT_FAIL fill:#F44336,color:#fff
+    style OUTPUT_REVIEW fill:#FF9800,color:#fff
+```
 
 **Tier 1.5: Multi-Sample Consistency Check**
 
@@ -759,6 +901,41 @@ def _compute_stability(registry, num_versions):
             score = 0.40
 ```
 
+**Stability Scoring Decision Flow:**
+
+```mermaid
+flowchart TD
+    INPUT[Finding with<br/>origin_version & modification_count]
+
+    CHECK_LATE{origin_version<br/>== num_versions?}
+
+    CHECK_MODS0{modifications<br/>== 0?}
+    CHECK_MODS1{modifications<br/>== 1?}
+    CHECK_MODS2{modifications<br/>== 2?}
+
+    SCORE_020[Score: 0.20<br/>HIGH RISK<br/>Late addition, no review]
+    SCORE_095[Score: 0.95<br/>VERY STABLE<br/>Never modified]
+    SCORE_085[Score: 0.85<br/>STABLE<br/>One refinement]
+    SCORE_070[Score: 0.70<br/>MODERATE<br/>Two changes]
+    SCORE_040[Score: 0.40<br/>VOLATILE<br/>3+ modifications]
+
+    INPUT --> CHECK_LATE
+    CHECK_LATE -->|Yes - Final version| SCORE_020
+    CHECK_LATE -->|No| CHECK_MODS0
+    CHECK_MODS0 -->|Yes| SCORE_095
+    CHECK_MODS0 -->|No| CHECK_MODS1
+    CHECK_MODS1 -->|Yes| SCORE_085
+    CHECK_MODS1 -->|No| CHECK_MODS2
+    CHECK_MODS2 -->|Yes| SCORE_070
+    CHECK_MODS2 -->|No| SCORE_040
+
+    style SCORE_020 fill:#F44336,color:#fff
+    style SCORE_095 fill:#4CAF50,color:#fff
+    style SCORE_085 fill:#8BC34A,color:#fff
+    style SCORE_070 fill:#FFC107,color:#000
+    style SCORE_040 fill:#FF9800,color:#fff
+```
+
 **Example:** Bill with 5 versions (Introduced → Enrolled)
 ```
 F1: origin=1, mods=0 → 0.95  // Present since v1, never changed - very stable
@@ -768,6 +945,42 @@ F3: origin=5, mods=0 → 0.20  // Added in v5 (final) - HIGH RISK, no review his
 
 #### OUTPUTS
 
+```mermaid
+classDiagram
+    class EvolutionResult {
+        +str bill_id
+        +Dict findings_registry
+        +Dict stability_scores
+        +List nrg_business_verticals
+        +Dict nrg_vertical_impact_details
+        +Dict legal_code_changes
+        +Dict application_scope
+        +List effective_dates
+        +str recommended_action
+        +List internal_stakeholders
+    }
+
+    class Finding {
+        +str id
+        +str statement
+        +List quotes
+        +int origin_version
+        +int modification_count
+        +str status
+        +int impact_estimate
+        +List affected_verticals
+    }
+
+    class Quote {
+        +str text
+        +str section
+    }
+
+    EvolutionResult "1" --> "*" Finding : findings_registry
+    Finding "1" --> "*" Quote : quotes
+```
+
+**Field Descriptions:**
 ```python
 @dataclass
 class EvolutionResult:
@@ -1018,20 +1231,53 @@ A text file (`nrg_business_context.txt`) containing NRG's business profile:
 
 #### HOW IT'S USED IN V2
 
+```mermaid
+flowchart LR
+    subgraph INIT[Pipeline Start]
+        CTX_FILE[nrg_business_context.txt]
+        CTX_LOAD[load_nrg_context]
+        CTX_FILE --> CTX_LOAD
+    end
+
+    subgraph S1[Stage 1: Extraction]
+        S1_LLM[LLM: Extract<br/>NRG-relevant findings]
+        S1_DESC[Context helps identify<br/>which provisions affect NRG]
+    end
+
+    subgraph S2[Stage 2: Validation]
+        S2_LLM[LLM: Judge<br/>assess relevance]
+        S2_DESC[Context validates<br/>business impact claims]
+    end
+
+    subgraph S3[Stage 3: Scoring]
+        S3_LLM[LLM: Score on<br/>rubric dimensions]
+        S3_DESC[Context calibrates<br/>financial thresholds]
+    end
+
+    CTX_LOAD -->|nrg_context| S1_LLM
+    CTX_LOAD -->|nrg_context| S2_LLM
+    CTX_LOAD -->|nrg_context| S3_LLM
+
+    S1 --> S2 --> S3
+
+    style CTX_FILE fill:#FFF3E0,color:#000
+    style S1 fill:#4CAF50,color:#fff
+    style S2 fill:#9C27B0,color:#fff
+    style S3 fill:#2196F3,color:#fff
+```
+
+**Code Example:**
 ```python
 # 1. LOADED at pipeline start
 nrg_context = load_nrg_context("nrg_business_context.txt")
 
 # 2. PASSED to Stage 1 - Extraction
-# Context helps LLM identify NRG-relevant findings
 evolution_result = agent.walk_versions(bill_id, versions, nrg_context)
 
 # 3. PASSED to Stage 2 - Validation
-# Context helps Judge assess relevance
 orchestrator.validate(bill_id, bill_text, nrg_context, findings_registry)
 
 # 4. PASSED to Stage 3 - Rubric Scoring
-# Context calibrates financial thresholds to NRG's scale
 judge.score_rubric(dimension, finding, bill_text, nrg_context, rubric_anchors)
 ```
 
@@ -1083,50 +1329,85 @@ NRG_BUSINESS_VERTICALS = [
 
 **Storage:** SQLite database (`bill_cache.db`)
 
-**Tables:**
-```sql
--- bills: Main bill metadata
-bill_id TEXT PRIMARY KEY,    -- "{source}:{bill_number}"
-source TEXT,                 -- "Congress.gov", "OpenStates"
-bill_number TEXT,
-title TEXT,
-text_hash TEXT,              -- SHA-256 of bill summary (for change detection)
-status TEXT,
-full_data_json TEXT,         -- Complete bill data as JSON
-last_checked TIMESTAMP
+```mermaid
+erDiagram
+    BILLS {
+        text bill_id PK "source:bill_number"
+        text source "Congress.gov, OpenStates"
+        text bill_number
+        text title
+        text text_hash "SHA-256 for change detection"
+        text status
+        text full_data_json
+        timestamp last_checked
+    }
 
--- bill_versions: Individual versions
-version_id TEXT PRIMARY KEY,  -- "{bill_id}:v{num}:{type}"
-version_type TEXT,
-full_text TEXT,
-text_hash TEXT,
-word_count INTEGER
+    BILL_VERSIONS {
+        text version_id PK "bill_id:v_num:type"
+        text bill_id FK
+        text version_type "IH, EH, ENR..."
+        text full_text
+        text text_hash
+        int word_count
+    }
 
--- amendments: Amendment tracking
-amendment_id TEXT PRIMARY KEY,
-bill_id TEXT,
-amendment_number TEXT,
-status TEXT,
-detected_at TIMESTAMP
+    AMENDMENTS {
+        text amendment_id PK
+        text bill_id FK
+        text amendment_number
+        text status
+        timestamp detected_at
+    }
+
+    BILLS ||--o{ BILL_VERSIONS : "has versions"
+    BILLS ||--o{ AMENDMENTS : "has amendments"
 ```
 
 #### BILL CHANGE DETECTION
 
 **Method:** HYBRID (Hash + Diff)
 
-1. **Hash-Based Detection (Fast):**
-   ```python
-   def compute_bill_hash(bill_text):
-       return hashlib.sha256(bill_text.encode('utf-8')).hexdigest()
+```mermaid
+flowchart TD
+    BILL[Bill Retrieved from API]
+    HASH[Compute Text Hash<br/>SHA-256]
 
-   # Compare: cached_hash != current_hash → change detected
-   ```
+    BILL --> HASH
+    HASH --> QUERY[Query Cache:<br/>SELECT text_hash<br/>WHERE bill_id = ?]
 
-2. **Diff-Based Analysis (Detailed):**
-   ```python
-   def compute_text_diff(old_text, new_text):
-       return difflib.unified_diff(old_lines, new_lines)
-   ```
+    QUERY --> EXISTS{Bill Exists<br/>in Cache?}
+
+    EXISTS -->|No| NEW[Mark as NEW]
+    NEW --> SAVE_NEW[Save Bill +<br/>Run Full Analysis]
+
+    EXISTS -->|Yes| COMPARE{Hash Match?}
+
+    COMPARE -->|Yes| CHECK_STATUS{Status Changed?}
+    CHECK_STATUS -->|No| CHECK_AMEND{New Amendments?}
+    CHECK_AMEND -->|No| SKIP[Skip - No Changes]
+    CHECK_AMEND -->|Yes| AMEND_ANALYSIS[Analyze New<br/>Amendments Only]
+
+    CHECK_STATUS -->|Yes| STATUS_UPDATE[Log Status Change<br/>Update Cache]
+
+    COMPARE -->|No| CHANGED[Mark as CHANGED]
+    CHANGED --> FETCH_OLD[Fetch Previous<br/>Version from Cache]
+    FETCH_OLD --> DIFF[Generate Text Diff]
+    DIFF --> LLM_DIFF[LLM Analyze Changes<br/>Impact Assessment]
+    LLM_DIFF --> SAVE_UPDATE[Save Updated Bill<br/>+ Change Analysis]
+
+    SAVE_NEW --> REPORT
+    SAVE_UPDATE --> REPORT
+    STATUS_UPDATE --> REPORT
+    AMEND_ANALYSIS --> REPORT
+    SKIP --> REPORT
+
+    REPORT[Include in Report]
+
+    style NEW fill:#4CAF50,color:#fff
+    style CHANGED fill:#FF9800,color:#fff
+    style SKIP fill:#9E9E9E,color:#fff
+    style REPORT fill:#2196F3,color:#fff
+```
 
 **Three Change Types Tracked:**
 
