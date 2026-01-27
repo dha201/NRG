@@ -1,0 +1,225 @@
+// OPENSTATES API - Complete State Bill Data (Texas SB 8 - 5 versions)
+// Pipeline Stage: Data Collection (Phase 2) + Version Tracking (Phase 3)
+// API Endpoint: https://v3.openstates.org/bills/{bill_id}?include=versions&include=sponsorships&include=actions
+
+{
+  "id": "ocd-bill/628f4192-e8db-4802-9e01-1a672027f9e0",  // Unique ID for API lookups and caching
+
+  "identifier": "SB 8",                     // Human-readable bill number
+  "session": "892",                         // Legislative session ID (Texas uses numeric codes)
+
+  "jurisdiction": {
+    "id": "ocd-jurisdiction/country:us/state:tx/government",
+    "name": "Texas",                        // State identification - used for geographic filtering
+    "classification": "state"
+  },
+
+  "from_organization": {
+    "id": "ocd-organization/cabf1716-c572-406a-bfdd-1917c11ac629",
+    "name": "Senate",
+    "classification": "upper"               // "upper" = Senate, "lower" = House/Assembly
+  },
+
+  "title": "Relating to the designation and use of certain spaces and facilities according to sex; authorizing a civil penalty and a private civil right of action.",
+  // ^^^ Long titles common in state bills
+
+  "classification": ["bill"],               // Type: "bill", "resolution", "joint resolution". We focus on "bill".
+
+  "subject": [
+    "ATTORNEY GENERAL (V2811)",
+    "ATTORNEY'S FEES (S0202)",
+    "Civil Remedies & Liabilities (I0065)",
+    "Courts--General (I0160)",
+    "Education--Higher--General (I0231)",
+    "GENDER IDENTITY & EXPRESSION (S0767)",
+    "Political Subdivisions (I0588)",
+    "State Agencies, Boards & Commissions (I0749)",
+    "Women (I0925)"
+    // ^^^ Topic tags for filtering. Codes in parentheses are state-specific.
+  ],
+
+  "openstates_url": "https://openstates.org/tx/bills/892/SB8/",  // Link to web view for human reference
+
+  "first_action_date": "2025-08-15",
+  "latest_action_date": "2025-09-22",
+  "latest_action_description": "Effective on . . . . . . . . . . . . . . .",
+  "latest_passage_date": "2025-09-03",      // Indicates bill passed
+
+  "created_at": "2025-08-18T20:53:38.995054+00:00",
+  "updated_at": "2025-09-22T18:22:24.917299+00:00",  // Change detection: compare to cached value
+
+  // ============================================================================
+  // VERSIONS - Core data for evolution analysis
+  // NOTE: OpenStates uses DIFFERENT terminology than Congress.gov!
+  // ============================================================================
+  "versions": [
+    {
+      "id": "dcdbda08-174f-4358-8479-726d4971fe99",
+      "note": "Enrolled",                   // NORMALIZED to "ENR" via VERSION_TYPE_MAP
+      // ^^^ Final version sent to Governor for signature
+      "date": "",
+      "classification": "",
+      "links": [
+        {
+          "url": "http://capitol.texas.gov/tlodocs/892/billtext/pdf/SB00008F.PDF",
+          "media_type": "application/pdf"   // PRIMARY: Downloaded, text extracted via PyPDF2
+        },
+        {
+          "url": "http://capitol.texas.gov/tlodocs/892/billtext/html/SB00008F.HTM",
+          "media_type": "text/html"         // FALLBACK: Used if PDF extraction fails
+        }
+      ]
+    },
+    {
+      "id": "7292161d-c3aa-4fb2-bc09-aa087d4f0cce",
+      "note": "House Committee Report",     // NORMALIZED to "RH" (Reported in House)
+      // ^^^ Version after House committee review/amendments
+      "links": [{
+        "url": "http://capitol.texas.gov/tlodocs/892/billtext/pdf/SB00008H.PDF",
+        "media_type": "application/pdf"
+      }]
+    },
+    {
+      "id": "3e0b87e9-c59d-45ce-b59f-95282dad7dfc",
+      "note": "Engrossed",                  // NORMALIZED to "EH" or "ES" depending on chamber
+      // ^^^ Version that passed originating chamber
+      "links": [{
+        "url": "http://capitol.texas.gov/tlodocs/892/billtext/pdf/SB00008E.PDF",
+        "media_type": "application/pdf"
+      }]
+    },
+    {
+      "id": "5ce8b56c-09bd-4fcb-9979-0f4523d9accd",
+      "note": "Senate Committee Report",    // NORMALIZED to "RS" (Reported in Senate)
+      // ^^^ Version after Senate committee review
+      "links": [{
+        "url": "http://capitol.texas.gov/tlodocs/892/billtext/pdf/SB00008S.PDF",
+        "media_type": "application/pdf"
+      }]
+    },
+    {
+      "id": "a3300f4a-0292-4697-ad2f-79f13d54eca5",
+      "note": "Introduced",                 // NORMALIZED to "IH" or "IS" depending on chamber
+      // ^^^ Original bill text as filed
+      "links": [{
+        "url": "http://capitol.texas.gov/tlodocs/892/billtext/pdf/SB00008I.PDF",
+        "media_type": "application/pdf"
+      }]
+    }
+  ],
+
+  // ============================================================================
+  // VERSION ANALYSIS FLOW
+  // ============================================================================
+  // Step 1: Sort versions chronologically (Introduced → Enrolled)
+  // Step 2: Extract text from each PDF via PyPDF2
+  // Step 3: Stage 1 (Sequential Evolution): Analyze v1, carry memory to v2, etc.
+  // Step 4: Track: which findings are STABLE, MODIFIED, or NEW
+  // Step 5: Compute stability scores based on origin_version and modification_count
+
+  // ============================================================================
+  // VERSION NAMING NORMALIZATION (nrg_core/utils.py:33-79)
+  // OpenStates terminology → Federal codes
+  // ============================================================================
+  // "Introduced"              → "IH" or "IS"
+  // "As Filed"                → "IH" or "IS"
+  // "Committee Report"        → "RH" or "RS"
+  // "House Committee Report"  → "RH"
+  // "Senate Committee Report" → "RS"
+  // "Engrossed"               → "EH" or "ES"
+  // "Enrolled"                → "ENR"
+  // "Chaptered"               → "ENR" (California-specific)
+  // "Signed"                  → "ENR"
+
+  // ============================================================================
+  // SPONSORSHIPS - Political context
+  // ============================================================================
+  "sponsorships": [
+    {
+      "name": "Middleton",
+      "primary": true,                      // Lead sponsor - key contact for engagement
+      "classification": "primary",
+      "person": {
+        "name": "Mayes Middleton",
+        "party": "Republican",
+        "current_role": {
+          "title": "Senator",
+          "district": "11"
+        }
+      }
+    },
+    {
+      "name": "Bettencourt",
+      "primary": true,
+      "person": {
+        "name": "Paul Bettencourt",
+        "party": "Republican",
+        "current_role": { "title": "Senator", "district": "7" }
+      }
+    },
+    {
+      "name": "Campbell",
+      "primary": true,
+      "person": {
+        "name": "Donna Campbell",
+        "party": "Republican",
+        "current_role": { "title": "Senator", "district": "25" }
+      }
+    }
+    // Multiple primary sponsors = coalition bill, likely to pass
+  ],
+
+  // ============================================================================
+  // ACTIONS - Complete timeline of bill progress
+  // ============================================================================
+  "actions": [
+    {
+      "description": "Received by the Secretary of the Senate",
+      "date": "2025-08-15",
+      "classification": ["filing", "introduction"],  // Standardized action types
+      "order": 0
+    },
+    {
+      "description": "Filed",
+      "date": "2025-08-15",
+      "classification": ["filing"],
+      "order": 1
+    },
+    {
+      "description": "Read first time",
+      "date": "2025-08-15",
+      "classification": ["introduction", "reading-1"],
+      "order": 2
+    },
+    {
+      "description": "Referred to State Affairs",
+      "date": "2025-08-15",
+      "classification": ["referral-committee"],      // Tracks committee assignment
+      "order": 3,
+      "related_entities": [
+        { "name": "State Affairs", "entity_type": "organization" }
+      ]
+    },
+    {
+      "description": "Considered in public hearing",
+      "date": "2025-08-15",
+      "order": 7
+    },
+    {
+      "description": "Vote taken in committee",
+      "date": "2025-08-15",
+      "order": 9                                     // Committee votes indicate likelihood of floor passage
+    }
+  ]
+
+  // ============================================================================
+  // ACTION CLASSIFICATION TYPES
+  // ============================================================================
+  // "introduction"       - Bill filed
+  // "reading-1"          - First reading (procedural)
+  // "reading-2"          - Second reading (debate)
+  // "reading-3"          - Third reading (final vote)
+  // "referral-committee" - Sent to committee
+  // "passage"            - Passed chamber
+  // "executive-signature"- Governor signed
+}

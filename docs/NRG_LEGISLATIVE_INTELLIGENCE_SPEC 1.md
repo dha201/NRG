@@ -1,14 +1,12 @@
-# BP Legislative Intelligence Agent - Requirements Specification
+# NRG Legislative Intelligence Agent - Requirements Specification
 
 **Version:** 1.0
 **Date:** December 2025
-**Prepared for:** BP Energy
-
 ---
 
 ## Executive Summary
 
-Build a legislative intelligence agent that automates monitoring, analysis, and comparison of federal and state legislation affecting BP Energy's business operations. The solution will leverage AI/LLM capabilities to provide actionable insights grounded in BP-specific business context.
+Build a legislative intelligence agent that automates monitoring, analysis, and comparison of federal and state legislation affecting NRG Energy's business operations. The solution will leverage AI/LLM capabilities to provide actionable insights grounded in NRG-specific business context.
 
 ---
 
@@ -16,30 +14,30 @@ Build a legislative intelligence agent that automates monitoring, analysis, and 
 
 ### 1. Bill Retrieval and Storage
 
-- Process to periodically scan BP-approved legislative API sources for new bills that match the specified search configuration
-- Storage of bill data in a BP-provided data lake
+- Process to periodically scan NRG-approved legislative API sources for new bills that match the specified search configuration
+- Storage of bill data in a NRG-provided data lake
 
 ### 2. Bill Analysis and Storage
 
 - AI analysis and summary generation for each tracked bill, including version tracking
-- BP-grounded analysis using business context
+- NRG-grounded analysis using business context
 - Impact scoring and recommended actions based on configuration file
 - Related media and social media search, summary, and sentiment analysis based on available APIs
-- Storage of bill and media analysis elements stored in a BP-provided data lake
+- Storage of bill and media analysis elements stored in a NRG-provided data lake
 
 ### 3. Report Generation and Notifications
 
-- Reports on bill analysis will be generated in DOCX or PDF format and stored to BP location
+- Reports on bill analysis will be generated in DOCX or PDF format and stored to NRG location
 - Periodic email that is sent to Legal or their designated group mailbox with links to the bill analysis
 
 ---
 
 ## Assumptions
 
-- Solution will be deployed on BP cloud infrastructure using BP service providers
+- Solution will be deployed on NRG cloud infrastructure using NRG service providers
 - Detailed requirements will be mutually agreed upon to fit available resources
 - Services will be delivered between Jan 2026 and June 2026
-- Bill information and analysis stored in data lake can be used as RAG corpus by BP for chatbot
+- Bill information and analysis stored in data lake can be used as RAG corpus by NRG for chatbot
 
 ---
 
@@ -340,7 +338,7 @@ GOOGLE_API_KEY=your_key  # For Gemini
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     BP Legislative Intelligence                  │
+│                     NRG Legislative Intelligence                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
@@ -352,11 +350,11 @@ GOOGLE_API_KEY=your_key  # For Gemini
 │                           │                                      │
 │                    ┌──────▼───────┐                              │
 │                    │  Data Lake   │                              │
-│                    │  (BP Cloud)  │                              │
+│                    │  (NRG Cloud)  │                              │
 │                    └──────┬───────┘                              │
 │                           │                                      │
 │                    ┌──────▼───────┐                              │
-│                    │  AI/LLM      │ ◄─── BP Business Context     │
+│                    │  AI/LLM      │ ◄─── NRG Business Context     │
 │                    │  Analysis    │                              │
 │                    └──────┬───────┘                              │
 │                           │                                      │
@@ -392,4 +390,4 @@ GOOGLE_API_KEY=your_key  # For Gemini
 
 ---
 
-*Document prepared for BP Energy legislative intelligence requirements*
+*Document prepared for NRG Energy legislative intelligence requirements*

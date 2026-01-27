@@ -63,6 +63,7 @@ class TwoTierOrchestrator:
         self,
         judge_model: str = "gpt-4o",
         judge_api_key: str | None = None,
+        fallback_api_key: str | None = None,
         enable_multi_sample: bool = True,
         enable_fallback: bool = True,
         enable_deep_research: bool = False,
@@ -83,6 +84,7 @@ class TwoTierOrchestrator:
         Args:
             judge_model: Model for judge (default: gpt-4o)
             judge_api_key: API key for judge and optional components
+            fallback_api_key: Anthropic API key for fallback (Claude). If None, fallback is disabled.
             enable_multi_sample: Enable multi-sample consistency check
             enable_fallback: Enable fallback second model
             enable_deep_research: Enable deep research for external context (Phase 4)
@@ -94,6 +96,9 @@ class TwoTierOrchestrator:
             research_agent: Pre-instantiated DeepResearchAgent (for testing/mocking)
             reference_detector: Pre-instantiated ReferenceDetector (for testing/mocking)
         """
+        self.logger = logging.getLogger(__name__)
+        self.logger.debug(f"Two-Tier Orchestrator initialized for model={judge_model}")
+
         self.judge = judge or JudgeModel(
             model=judge_model,
             api_key=judge_api_key
@@ -101,9 +106,17 @@ class TwoTierOrchestrator:
         self.multi_sample = multi_sample if multi_sample is not None else (
             MultiSampleChecker(model=judge_model, api_key=judge_api_key) if enable_multi_sample else None
         )
-        self.fallback = fallback if fallback is not None else (
-            FallbackAnalyst(api_key=judge_api_key) if enable_fallback else None
-        )
+
+        # Fallback uses Anthropic Claude API - requires separate API key
+        # Gracefully disable if no Anthropic key available
+        if fallback is not None:
+            self.fallback = fallback
+        elif enable_fallback and fallback_api_key:
+            self.fallback = FallbackAnalyst(api_key=fallback_api_key)
+        else:
+            if enable_fallback and not fallback_api_key:
+                self.logger.warning("Fallback disabled: ANTHROPIC_API_KEY not set. Two-tier validation will proceed without Claude second opinion.")
+            self.fallback = None
         self.audit_generator = audit_generator or AuditTrailGenerator()
 
         # Phase 4: Deep research agent for external context

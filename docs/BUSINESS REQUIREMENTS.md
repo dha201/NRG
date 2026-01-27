@@ -2,6 +2,7 @@ SCOPE OF WORK (detailed/bulleted)
 Executive Summary
  
 Build a legislative intelligence agent that automates monitoring, analysis, and comparison of federal and state legislation affecting NRG Energy's business operations. The solution will leverage AI/LLM capabilities to provide actionable insights grounded in NRG-specific business context.
+
 Bill Retrieval and Storage
 Process to periodically scan NRG-approved legislative API sources for new bills that match the specified search configuration
 Storage of bill data in an NRG-provided data lake

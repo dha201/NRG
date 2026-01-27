@@ -1,0 +1,159 @@
+// CONGRESS.GOV API - Multi-Version Bill Example (H.R. 21 - 3 versions)
+// Pipeline Stage: Version Tracking (Phase 3) + Sequential Evolution (Stage 1)
+// This example shows how bills evolve through the legislative process
+
+{
+  "bill": {
+    "congress": 118,
+    "number": "21",
+    "type": "HR",
+    // bill_id: "Congress.gov:118:hr:21"
+
+    "title": "Strategic Production Response Act",  // About Strategic Petroleum Reserve - directly relevant to NRG
+
+    "introducedDate": "2023-01-09",
+    "originChamber": "House",
+
+    "policyArea": {
+      "name": "Energy"                      // Passes our NRG-relevance filter
+    },
+
+    "latestAction": {
+      "actionDate": "2023-01-30",
+      "text": "Received in the Senate and Read twice and referred to the Committee on Energy and Natural Resources."
+      // Status: Passed House, now in Senate committee
+    },
+
+    "sponsors": [{
+      "fullName": "Rep. McMorris Rodgers, Cathy [R-WA-5]",
+      "party": "R",
+      "state": "WA"
+    }],
+
+    "cosponsors": { "count": 40 },          // High cosponsor count = strong support
+
+    "amendments": { "count": 78 },          // 78 amendments = highly contested, expect significant changes
+
+    "cboCostEstimates": [{
+      "description": "As Introduced on January 9, 2023",
+      "title": "H.R. 21, Strategic Production Response Act",
+      "url": "https://www.cbo.gov/publication/58909"  // CBO cost estimate - used in financial impact scoring
+    }],
+
+    "textVersions": { "count": 3 }          // THREE VERSIONS - core of evolution analysis
+  },
+
+  // ============================================================================
+  // TEXT VERSIONS - Shows bill evolution through Congress
+  // Each version text is extracted and analyzed SEQUENTIALLY with memory
+  // ============================================================================
+  "textVersions": [
+    {
+      // VERSION 1: ORIGINAL
+      "date": "2023-01-09T05:00:00Z",
+      "type": "Introduced in House",        // Normalized to "IH" via VERSION_TYPE_MAP
+      "formats": [{
+        "type": "PDF",
+        "url": "https://www.congress.gov/118/bills/hr21/BILLS-118hr21ih.pdf"  // "ih" = Introduced in House
+      }]
+      // Pipeline: First version analyzed, findings F1, F2, F3... extracted, stored in memory
+    },
+    {
+      // VERSION 2: PASSED HOUSE
+      "date": "2023-01-27T05:00:00Z",
+      "type": "Engrossed in House",         // Normalized to "EH" - version that passed House floor vote
+      "formats": [{
+        "type": "PDF",
+        "url": "https://www.congress.gov/118/bills/hr21/BILLS-118hr21eh.pdf"  // "eh" = Engrossed in House
+      }]
+      // Pipeline: Compare to v1 findings, mark STABLE/MODIFIED/NEW, update memory
+    },
+    {
+      // VERSION 3: SENT TO SENATE
+      "date": "2023-01-30T05:00:00Z",
+      "type": "Referred in Senate",         // Normalized to "RFS" - House-passed version received by Senate
+      "formats": [{
+        "type": "PDF",
+        "url": "https://www.congress.gov/118/bills/hr21/BILLS-118hr21rfs.pdf"  // "rfs" = Referred in Senate
+      }]
+      // Pipeline: Final analysis, compute stability scores for all findings
+    }
+  ],
+
+  // ============================================================================
+  // VERSION TYPE CODES (URL suffixes)
+  // ============================================================================
+  // ih  = Introduced in House
+  // is  = Introduced in Senate
+  // eh  = Engrossed in House (passed House)
+  // es  = Engrossed in Senate (passed Senate)
+  // rh  = Reported in House (committee version)
+  // rs  = Reported in Senate
+  // rfs = Referred in Senate (House bill sent to Senate)
+  // rfh = Referred in House (Senate bill sent to House)
+  // enr = Enrolled (final, passed both chambers)
+
+  // ============================================================================
+  // SEQUENTIAL EVOLUTION EXAMPLE - How Stage 1 processes this bill's 3 versions
+  // ============================================================================
+  "sequentialEvolutionExample": {
+    "v1_analysis": {
+      "version": "Introduced in House (2023-01-09)",
+      "action": "Extract findings from original bill text",
+      "findings": [
+        "F1: Prohibits SPR releases except during energy supply interruption",
+        "F2: Requires DOE to develop plan to increase domestic production",
+        "F3: Limits SPR drawdown to 1M barrels/day maximum"
+      ],
+      "memory": "Store F1, F2, F3 with origin_version=1, modification_count=0"
+    },
+
+    "v2_analysis": {
+      "version": "Engrossed in House (2023-01-27)",
+      "action": "Compare to v1 memory, identify changes",
+      "comparison": {
+        "F1": "STABLE - unchanged from v1",
+        "F2": "MODIFIED - added specific production targets",  // modification_count: 0 → 1
+        "F3": "STABLE - unchanged",
+        "F4": "NEW - added reporting requirements"             // origin_version: 2
+      }
+    },
+
+    "v3_analysis": {
+      "version": "Referred in Senate (2023-01-30)",
+      "action": "Final comparison, compute stability scores",
+      "finalStabilityScores": {
+        "F1": 0.95,  // origin=1, mods=0 → Never modified, very stable
+        "F2": 0.85,  // origin=1, mods=1 → One refinement, still stable
+        "F3": 0.95,  // origin=1, mods=0 → Never modified
+        "F4": 0.70   // origin=2, mods=0 → Added mid-process, moderate stability
+      }
+    }
+  },
+
+  // ============================================================================
+  // STABILITY SCORING FORMULA (from nrg_core/v2/sequential_evolution.py:427-467)
+  // ============================================================================
+  // if origin_version == num_versions:  score = 0.20  // Last-minute addition, HIGH RISK
+  // elif modifications == 0:            score = 0.95  // Never modified, very stable
+  // elif modifications == 1:            score = 0.85  // One refinement
+  // elif modifications == 2:            score = 0.70  // Two changes
+  // else (modifications >= 3):          score = 0.40  // Highly contested
+
+  // ============================================================================
+  // TOKEN EFFICIENCY COMPARISON
+  // ============================================================================
+  "tokenEfficiency": {
+    "poc2": {
+      "method": "Analyze each version independently (no memory)",
+      "v1": 6700, "v2": 6700, "v3": 6700,
+      "total": 20100
+    },
+    "v2": {
+      "method": "Sequential evolution with ~500 token memory",
+      "v1": 6700, "v2": 4500, "v3": 4500,  // v2/v3 only analyze differences
+      "total": 15700,
+      "savings": "22% reduction (more savings with more versions)"
+    }
+  }
+}

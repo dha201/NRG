@@ -78,7 +78,7 @@ Automated legislative intelligence platform monitoring federal and state legisla
             ┌──────────────┴──────────────┐
             │                             │
             v (Simple)                    v (Complex)
-      STANDARD PATH               ENHANCED PATH ✓
+      STANDARD PATH               ENHANCED PATH
       (1 model, 15s)              (2-tier, 3 mins)
       [PLANNED]                           |
             │                             │
@@ -396,7 +396,7 @@ classDiagram
 >
 > **When Used:** During the Researcher's analysis phase when processing multi-version bills. Each version updates the memory state rather than starting fresh.
 >
-> **Why:** Analyzing versions independently costs ~60k tokens and loses lineage context. Sequential memory reduces this to ~31k tokens (48% savings) while enabling accurate stability scoring based on how findings evolved.
+> **Why:** Analyzing versions independently costs ~60k tokens and loses lineage context. Sequential memory reduces this to ~31k tokens (48% savings) while enabling stability scoring based on how findings evolved.
 
 ```mermaid
 classDiagram
@@ -479,41 +479,97 @@ classDiagram
 
 ### Pattern 4: Rubric-Based Scoring with Audit Trails
 
+> **Purpose:** Scores validated findings against explicit rubrics (0-10 scales) while grounding scores in business context. Produces audit trails that answer "why this score?" with evidence and rationale.
+>
+> **When Used:** After validation (Pattern 2). The Judge scores each finding on 4 dimensions using the client's business context and configured rubric.
+>
+> **Why:** Stakeholders need explainable scores, not black-box numbers. Rubric ensures consistency, business context ensures relevance to the client, and audit trails enable compliance review and expert calibration.
+
+```mermaid
+classDiagram
+    class RubricScorer {
+        <<Judge Component>>
+        Scores findings on 4 dimensions
+        using business context and rubric
+        Input:
+        -finding: ValidatedFinding
+        -businessContext: BusinessContext
+        -rubricConfig: RubricConfig
+        Output:
+        +scoreAllDimensions() list~RubricScore~
+        +generateAuditTrail() AuditTrail
+    }
+
+    class BusinessContext {
+        <<Client-Specific>>
+        NRG-specific context for grounding
+        scores in operational reality
+        Fields:
+        +company_profile: str
+        +asset_types: list~str~
+        +geographic_exposure: list~str~
+        +regulatory_concerns: list~str~
+    }
+
+    class RubricConfig {
+        <<Per-Client Configurable>>
+        Defines scoring anchors per dimension
+        adjustable based on client needs
+        Fields:
+        +dimensions: list~str~
+        +anchors: dict~str, AnchorScale~
+        +client_id: str
+        +version: str
+    }
+
+    class RubricScore {
+        +dimension: str
+        +score: int 0-10
+        +rationale: str min 50 chars
+        +evidence: list~Quote~
+        +rubric_anchor: str
+    }
+
+    class AuditTrail {
+        +finding_id: str
+        +scores: list~RubricScore~
+        +business_context_used: str
+        +timestamp: datetime
+        +traceable: bool
+    }
+
+    class CalibrationManager {
+        <<Evaluation Strategy>>
+        Adjusts rubrics based on expert
+        labels - see Evaluation Strategy section
+        Input:
+        -expertLabels: list~ExpertScore~
+        -systemScores: list~RubricScore~
+        Output:
+        +computeMAE() float
+        +identifyBias() dict
+        +suggestAnchorAdjustments() RubricConfig
+    }
+
+    RubricScorer --> BusinessContext : uses
+    RubricScorer --> RubricConfig : uses
+    RubricScorer --> RubricScore : produces
+    RubricScorer --> AuditTrail : generates
+    CalibrationManager --> RubricConfig : refines
+    CalibrationManager --> RubricScore : evaluates
 ```
-Rubric Dimensions:
-  Legal risk:        0-10 (anchored scale)
-  Operational:       0-10 (disruption to ops)
-  Financial:         0-10 ($ impact)
-  Ambiguity:         0-10 (interpretive risk)
 
-Per-Dimension Scoring:
-  {
-    dimension: "financial_impact",
-    score: 3,
-    explanation: "Score=3 because quarterly reporting 
-                  estimated at $50-100K annual cost
-                  per Section 4.1 requirements",
-    evidence: [
-      {quote: "Section 4.1: quarterly reports", section: "4.1"},
-      {quote: "estimated cost per facility", section: "4.2"}
-    ],
-    rubric_anchor: "3-5: Non-core obligations, 
-                    moderate cost < $500K"
-  }
+**Key Capabilities:**
 
-Audit Trail:
-  - Dimension scores with rationale
-  - Quotes supporting each score
-  - Rubric anchor references
-  - Sub-metrics (new_obligation: true, quantitative_amount: "$50-100K")
-```
+- **Explainable scores**: Every score answers "why 3/10?" with business context rationale and evidence quotes (see **Component 4: Rubric-Based Scoring → Example Scoring** for a complete 4-dimension example)
+- **Audit trail for compliance**: Full traceability from score → rationale → evidence quotes → bill sections
+> **Calibration against expert labels**: Quarterly, human experts (legal/compliance) score a sample of bills using the same rubrics. We compare their scores to the system's scores, if the system consistently scores too high or too low on a dimension, we adjust the rubric definitions to correct the drift (see **Evaluation Strategy: Approach 1**)
+- **Per-client rubric configuration** *(requires implementation)*: `RubricConfig` supports client-specific rubric definitions. Example: a utility company may define "financial_impact" 6-8 as "$1M-$10M" while a smaller client uses "$500K-$5M". Implementation requires:
+  - Client-specific rubric config files or database storage
+  - Rubric selection based on `client_id` at analysis time
+  - Versioning to track rubric changes over time
 
-- Answerable "why 3/10?" with business context
-- Audit trail for compliance
-- Can be calibratable against expert labels
-- Adjustable rubrics per client
-
-**Rubric Anchors (Financial Impact Example):**
+**Rubric Example (Default - Financial Impact):**
 ```
 0-2:  Trivial (cosmetic language changes, no $ impact)
 3-5:  Minor (reporting changes, <$500K annual)
@@ -641,49 +697,7 @@ graph TD
 └─────────────────────────────────────────┘
 ```
 
-```mermaid
-%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
-flowchart TD
-    subgraph ORCH["ORCHESTRATION LAYER - Code-Based"]
-        INPUT["Input: Bill + metadata"]
-        
-        subgraph STEP1["Step 1: Assess Complexity"]
-            C1["Length > 20 pages?"]
-            C2["Multiple versions?"]
-            C3["High-impact domain?"]
-            DECISION["Decision:<br/>STANDARD ~80% or ENHANCED ~20%"]
-        end
-        
-        subgraph STEP2["Step 2: Decompose Tasks"]
-            T1["Task 1: Bill understanding"]
-            T2["Task 2: Version evolution"]
-            T3["Task 3: Scoring"]
-        end
-        
-        subgraph STEP3["Step 3: Enforce Gates"]
-            G1["Token budget: 100K max"]
-            G2["Time budget: 5 min max"]
-            G3["Quality gates: Min evidence count"]
-        end
-        
-        subgraph STEP4["Step 4: Maintain State"]
-            S1["Cross-task memory"]
-            S2["Findings registry"]
-            S3["Confidence tracking"]
-        end
-        
-        OUTPUT["Output: Orchestrated analysis"]
-    end
-    
-    INPUT --> STEP1
-    STEP1 --> STEP2
-    STEP2 --> STEP3
-    STEP3 --> STEP4
-    STEP4 --> OUTPUT
-    
-    classDef orchestration fill:#fff3e0,stroke:#e65100,color:#000
-    class ORCH orchestration
-```
+> **Implementation Status:** Currently all bills route to ENHANCED path (hardcoded in `two_tier.py:299`). Complexity assessment, STANDARD path, budget enforcement, and abort logic are planned but not yet implemented. The pipeline execution (Sequential Evolution → Validation → Rubric Scoring) and findings registry are implemented.
 
 **Implementation:** `TwoTierOrchestrator` class in `nrg_core/v2/two_tier.py:40`
 
@@ -699,14 +713,24 @@ The Orchestration Layer is a **code-based controller** that manages the entire a
 
 Route bills to appropriate analysis depth based on objective complexity metrics.
 
-The system scores each bill across three dimensions using deterministic rules:
-- **Length Scoring:** Page count indicates provision density (`<20 pages = 0`, `20-50 = 1`, `>50 = 2`)
-- **Version Scoring:** Multiple versions signal complex legislative evolution (`1 version = 0`, `2-5 = 1`, `>5 = 2`)
-- **Domain Scoring:** Business impact varies by subject matter (`General = 0`, `Environmental = 1`, `Energy/Tax = 2`)
+**Scoring Dimensions:**
+
+| Dimension | 0 points | 1 point | 2 points |
+|-----------|----------|---------|----------|
+| **Length** | <20 pages | 20-50 pages | >50 pages |
+| **Versions** | 1 version | 2-5 versions | >5 versions |
+| **Domain** | General | Environmental | Energy/Tax |
 
 **Routing Decision:**
-- **0-2 points → STANDARD route** (~80% of bills): Simple bills get single-pass analysis with basic validation
-- **3+ points → ENHANCED route** (~20% of bills): Complex bills get full two-tier pipeline with judge validation, multi-sample checks, and fallback models
+
+| Feature | STANDARD (0-2 pts) | ENHANCED (3+ pts) |
+|---------|------------------------|----------------------|
+| **Analysis Pipeline** | Single-pass extraction | Full two-tier validation |
+| **Multi-Sample Check** | Disabled | Enabled for high-impact findings |
+| **Fallback Model** | Disabled | Enabled for uncertain findings |
+| **Token Budget** | 50K tokens | 100K tokens |
+| **Time Budget** | 30 seconds | 300 seconds |
+| **Evidence Required** | 1 quote minimum | 2 quotes minimum |
 
 #### 2: Decompose Tasks
 
@@ -745,33 +769,23 @@ Enable cross-stage information flow and provide audit trail of analysis progress
 The orchestrator maintains three state registries:
 - **Cross-Task Memory:** Structured JSON store (~500 tokens) holding findings from completed stages, enabling later stages to reference earlier results without re-analysis
 - **Findings Registry:** Deduplicated list of all extracted findings with validation status, preventing redundant processing
-- **Confidence Tracking:** Per-finding confidence scores that trigger conditional stages (multi-sample check if confidence < 0.7, fallback model if judge uncertain)
+- **Confidence Tracking:** Per-finding confidence scores that trigger conditional stages:
+  - **Multi-sample check:** Triggered if `impact >= 6` OR `confidence < 0.7`
+  - **Fallback model:** Triggered if `judge_confidence` in `[0.6, 0.8]` AND `impact >= 7`
+
+  Confidence is assigned by the Judge LLM (0-1 scale) based on evidence quality and ambiguity. See **Component 3: Two-Tier Validation → Trigger Conditions** for threshold details.
+
+  **Why different scales?**
+  | Metric | Scale | Rationale |
+  |--------|-------|-----------|
+  | **Confidence** | 0.0-1.0 (float) | Internal pipeline metric. Standard probability representation allows fine-grained threshold comparisons (e.g., `0.6 ≤ x ≤ 0.8`). Not shown in client reports. |
+  | **Impact** | 0-10 (int) | Client-facing metric. Matches rubric scoring scale for consistency. Human-readable ("7 out of 10"). Thresholds are configurable per client. |
 
 **Why This Works:**
 - **Memory Efficiency:** Structured memory stays fixed size vs accumulating full bill texts across stages
 - **Consistency:** Single source of truth prevents conflicting findings from different stages (see "Why Centralized State is Critical" table in End-to-End Pipeline Architecture section)
 - **Conditional Execution:** Confidence tracking enables smart resource allocation (only validate uncertain findings with expensive fallback models)
 - **Audit Trail:** Complete state history enables debugging and compliance reporting
-
-#### Complexity Assessment Details
-
-| Criteria | Points | Scoring Logic | Rationale |
-|----------|--------|---------------|-----------|
-| **Length** | 0-2 | `<20 pages = 0`, `20-50 pages = 1`, `>50 pages = 2` | Longer bills contain more provisions requiring deeper analysis |
-| **Versions** | 0-2 | `1 version = 0`, `2-5 versions = 1`, `>5 versions = 2` | More versions indicate complex legislative history with significant changes |
-| **Domain** | 0-2 | `General = 0`, `Environmental = 1`, `Energy/Tax = 2` | Energy/Tax are core to NRG business; Environmental has indirect impact |
-
-#### Route Differences
-
-| Feature | STANDARD (0-2 points) | ENHANCED (3+ points) |
-|---------|------------------------|----------------------|
-| **Analysis Pipeline** | Single-pass extraction | Full two-tier validation |
-| **Multi-Sample Check** | Disabled | Enabled for high-impact findings |
-| **Fallback Model** | Disabled | Enabled for uncertain findings |
-| **Token Budget** | 50K tokens | 100K tokens |
-| **Time Budget** | 30 seconds | 300 seconds |
-| **Evidence Required** | 1 quote minimum | 2 quotes minimum |
-| **Estimated Cost** | [TBD] | [TBD] |
 
 #### Input/Output
 
@@ -802,6 +816,8 @@ Output:
 }
 ```
 
+> **Execution:** `analyze_bill()` in `nrg_core/v2/api.py:37` is the main entry point. It calls `SequentialEvolutionAgent.walk_versions()` for Stage 1, then `TwoTierOrchestrator.validate()` for Stages 2-3. Currently hardcoded to ENHANCED route—the routing structure above is the planned interface when complexity assessment is implemented.
+
 #### Failure Modes
 
 1. **Routing Error:** Complexity misclassified → Log for recalibration, complete analysis → No immediate impact
@@ -813,282 +829,6 @@ Output:
 - Latency: <1s (routing + decomposition)
 - Throughput: Not a bottleneck (stateless)
 - Resource: <1MB memory
-
----
-
-**End-to-End Pipeline Architecture**
-
-The following diagram shows how the orchestration layer coordinates all analysis stages from API call to final output:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ API CALL (Congress.gov / OpenStates)                            │
-│                                                                 │
-│    Input: Bill ID (e.g., "HR-1234")                             │
-│    Output:                                                      │
-│      - bill_summary: Title, sponsor, status                     │
-│      - versions: [{v1: "Introduced"}, {v2: "Amended"}, ...]     │
-│      - bill_text: Full text of each version                     │
-│                                                                 │
-│    → Pass to Orchestrator                                       │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 1: SEQUENTIAL EVOLUTION (Primary Extraction)             │
-│                                                                 │
-│    Extract findings from ALL versions, track evolution │
-│                                                                 │
-│    Process:                                                     │
-│      v1 (Introduced):                                           │
-│        → Extract findings: F1="Tax >50MW", F2="Applies to gas"  │
-│        → Store in memory with origin=v1                         │
-│                                                                 │
-│      v2 (Amended):                                              │
-│        → Compare to memory                                      │
-│        → F1 MODIFIED: "Tax >50MW" → "Tax >100MW"                │
-│        → F2 STABLE: unchanged                                   │
-│        → F3 NEW: "Exemption for renewables"                     │
-│        → Update memory: F1.modification_count=1                 │
-│                                                                 │
-│      v3 (Enrolled):                                             │
-│        → Compare to memory                                      │
-│        → F1 STABLE in v3 (still "Tax >100MW")                   │
-│        → F2 REMOVED (no longer in bill)                         │
-│        → F3 STABLE                                              │
-│        → Finalize memory                                        │
-│                                                                 │
-│    Output:                                                      │
-│      - findings_registry: {                                     │
-│          F1: {text: "Tax >100MW", origin: v1, mods: 1},         │
-│          F3: {text: "Exemption for renewables", origin: v2}     │
-│        }                                                        │
-│      - stability_scores: {F1: 0.85, F3: 0.70}                   │
-│      - removed_findings: [F2]                                   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 2: TWO-TIER VALIDATION (on latest version findings)       │
-│                                                                 │
-│    Validate extracted findings, filter hallucinations           │
-│                                                                 │
-│    Input: findings_registry from Stage 1 (latest state)         │
-│                                                                 │
-│    Process:                                                     │
-│      Tier 1 (Primary Analyst):                                  │
-│        → Already done in Stage 1 (extraction complete)          │
-│                                                                 │
-│      Tier 1.5 (Multi-Sample Check) - if needed:                 │
-│        → Re-run extraction 2-3x with different prompts          │
-│        → Compare outputs for consistency                        │
-│        → Flag findings with low agreement                       │
-│                                                                 │
-│      Tier 2 (Judge):                                            │
-│        → Validate each finding against bill text                │
-│        → Check: Does quote actually support the finding?        │
-│        → Detect hallucinations (finding not in bill)            │
-│        → Assign confidence score                                │
-│                                                                 │
-│      Tier 2.5 (Fallback Model) - if needed:                     │
-│        → For uncertain findings (confidence 0.6-0.8)            │
-│        → Get second opinion from different model (Claude)       │
-│                                                                 │
-│    Output:                                                      │
-│      - validated_findings: [F1, F3] (hallucinations filtered)   │
-│      - validation_metadata: {F1: {confidence: 0.92}, ...}       │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 3: RUBRIC SCORING                                         │
-│                                                                 │
-│    Purpose: Score validated findings on business impact         │
-│                                                                 │
-│    Input: validated_findings from Stage 2                       │
-│                                                                 │
-│    Process:                                                     │
-│      For each finding, score on 4 dimensions:                   │
-│        - legal_risk: 0-10 (regulatory exposure)                 │
-│        - financial_impact: 0-10 (cost to NRG)                   │
-│        - operational_disruption: 0-10 (process changes)         │
-│        - ambiguity_risk: 0-10 (interpretation uncertainty)      │
-│                                                                 │
-│    Output:                                                      │
-│      - scored_findings: [                                       │
-│          {F1: {legal: 7, financial: 8, operational: 4, ...}},   │
-│          {F3: {legal: 3, financial: 2, operational: 1, ...}}    │
-│        ]                                                        │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 4: OUTPUT & PREDICTIONS                                   │
-│                                                                 │
-│    Final output to legal/compliance team:                       │
-│                                                                 │
-│    - Validated findings with rubric scores                      │
-│    - Evolution history: "F1 changed from 50MW→100MW in v2"      │
-│    - Stability predictions:                                     │
-│        "F1: 85% stable - survived 2 versions with 1 change"     │
-│        "F3: 70% stable - added in v2, watch for changes"        │
-│    - Alerts: "Watch F3 - late addition, may change in v4"       │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ STAGE 5: INCREMENTAL UPDATE (when new version detected)        │
-│                                                                 │
-│    Trigger: Polling detects v4 added to bill                    │
-│                                                                 │
-│    Process:                                                     │
-│      → Load existing findings_registry from Stage 1             │
-│      → Run Sequential Evolution on v4 ONLY (not v1-v3 again)    │
-│      → Compare v4 to memory, update findings                    │
-│      → Re-validate if findings changed significantly            │
-│      → Re-score changed findings on rubrics                     │
-│                                                                 │
-│    Why incremental:                                             │
-│      → Cost: Analyze 1 version, not 4                           │
-│      → Speed: ~10s instead of ~40s                              │
-│      → Memory: Existing findings already extracted              │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-```mermaid
-%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
-flowchart TD
-    API["API CALL<br/>Congress.gov / OpenStates<br/><br/>Input: Bill ID<br/>Output: bill_summary, versions, bill_text"]
-    
-    DECISION{Has multiple versions?}
-    
-    STAGE1["STAGE 1: SEQUENTIAL EVOLUTION<br/>Primary Extraction<br/><br/>v1: Extract findings F1, F2<br/>v2: Compare - F1 MODIFIED, F3 NEW<br/>v3: Finalize - F1 STABLE, F2 REMOVED<br/><br/>Output: findings_registry, stability_scores"]
-    
-    STAGE2["STAGE 2: TWO-TIER VALIDATION<br/><br/>Tier 1.5: Multi-Sample Check if needed<br/>Tier 2: Judge validates vs bill text<br/>Tier 2.5: Fallback for uncertain findings<br/><br/>Output: validated_findings, confidence"]
-    
-    STAGE3["STAGE 3: RUBRIC SCORING<br/><br/>Score each finding on 4 dimensions:<br/>• legal_risk 0-10<br/>• financial_impact 0-10<br/>• operational_disruption 0-10<br/>• ambiguity_risk 0-10"]
-    
-    STAGE4["STAGE 4: OUTPUT & PREDICTIONS<br/><br/>• Validated findings with scores<br/>• Evolution history<br/>• Stability predictions<br/>• Alerts for volatile provisions"]
-    
-    STAGE5["STAGE 5: INCREMENTAL UPDATE<br/>when new version detected<br/><br/>• Load existing findings_registry<br/>• Analyze only new version<br/>• Re-validate changed findings<br/><br/>Cost: 1 version vs 4"]
-    
-    API --> DECISION
-    DECISION -->|YES| STAGE1
-    DECISION -->|NO| STAGE2
-    STAGE1 --> STAGE2
-    STAGE2 --> STAGE3
-    STAGE3 --> STAGE4
-    STAGE4 -.->|v4 detected| STAGE5
-    STAGE5 -.-> STAGE2
-    
-    classDef api fill:#e3f2fd,stroke:#1565c0,color:#000
-    classDef stage fill:#f3e5f5,stroke:#7b1fa2,color:#000
-    classDef decision fill:#fff9c4,stroke:#f9a825,color:#000
-    
-    class API api
-    class STAGE1,STAGE2,STAGE3,STAGE4,STAGE5 stage
-    class DECISION decision
-```
-
-| Design Decision | Rationale |
-|-----------------|-----------|
-| **Sequential Evolution runs FIRST** | Must walk all versions to understand evolution before validating. Can't know if finding is "stable" without seeing history. |
-| **Two-Tier validates AFTER extraction** | Validation needs complete findings list. Validating during extraction wastes cost on findings that get modified in later versions. |
-| **Rubric Scoring runs LAST** | Only score validated findings. Hallucinations filtered before scoring to avoid wasting LLM calls. |
-| **Incremental updates for new versions** | Don't re-analyze v1-v3 when v4 appears. Memory enables delta processing. |
-
-**What Stability Scores Predict:**
-
-| Score | Meaning | Prediction |
-|-------|---------|------------|
-| **0.95** | Survived all versions unchanged | Very unlikely to change in future versions |
-| **0.85** | One refinement (e.g., 50MW → 100MW) | May see minor tweaks, core provision stable |
-| **0.70** | Two changes across versions | Contentious provision, watch for more changes |
-| **0.40** | 3+ modifications | Highly volatile, expect further amendments |
-| **0.20** | Added in last version (last-minute) | Risky - often removed or heavily modified |
-
-**Example: Complete Pipeline Run**
-
-*Scenario:* Energy Tax Bill HR-1234 has 3 versions.
-
-```
-API Call
-  → GET /bills/HR-1234
-  → Response: {versions: [v1, v2, v3], status: "Enrolled"}
-
-STAGE 1: Sequential Evolution
-  v1 (Introduced):
-    F1: "Tax of $50/MW applies to facilities >50MW"
-    F2: "Applies to natural gas facilities"
-  
-  v2 (Amended):
-    F1: MODIFIED → "Tax of $50/MW applies to facilities >100MW" (threshold raised)
-    F2: STABLE
-    F3: NEW → "Renewable facilities exempt from tax"
-  
-  v3 (Enrolled):
-    F1: STABLE (still >100MW)
-    F2: REMOVED (natural gas provision deleted)
-    F3: STABLE
-  
-  Output:
-    findings_registry = {
-      F1: {text: "Tax >100MW", origin: v1, mods: 1, status: STABLE},
-      F3: {text: "Renewables exempt", origin: v2, mods: 0, status: STABLE}
-    }
-    stability_scores = {F1: 0.85, F3: 0.70}
-
-STAGE 2: Two-Tier Validation
-  F1: Judge validates → confidence 0.92 (quote found in Section 2.1)
-  F3: Judge validates → confidence 0.88 (quote found in Section 4.3)
-  
-  Output: Both findings validated, no hallucinations detected
-
-STAGE 3: Rubric Scoring
-  F1 ("Tax >100MW"):
-    legal_risk: 7, financial_impact: 8, operational: 4, ambiguity: 3
-  F3 ("Renewables exempt"):
-    legal_risk: 3, financial_impact: 6, operational: 2, ambiguity: 5
-  
-STAGE 4: Output
-  Alert to Legal Team:
-    "HR-1234 Enrolled - 2 findings affecting NRG operations"
-    
-    Finding 1: Tax applies to facilities >100MW
-      Impact: HIGH (financial: 8/10)
-      Evolution: Originally 50MW in v1, raised to 100MW in v2
-      Stability: 85% (likely final)
-    
-    Finding 2: Renewable facilities exempt
-      Impact: MEDIUM (financial: 6/10)
-      Evolution: Added in v2 amendment
-      Stability: 70% (added late, watch for changes)
-      ⚠️ WATCH: Late addition may be modified
-
-STAGE 5: Later - v4 Detected
-  Polling finds v4 (Conference Report) added
-  
-  Incremental update:
-    → Load existing memory (F1, F3)
-    → Analyze v4 only
-    → F1: STABLE
-    → F3: MODIFIED → "Renewable facilities exempt if operational before 2025"
-    → Update F3.modification_count = 1
-    → Re-validate F3, re-score on rubrics
-    → Alert: "F3 changed - new date restriction added"
-```
-
-**Why Centralized State is Critical:**
-
-The Findings Registry prevents these problems (see Component 2: Sequential Evolution Agent for full schema):
-
-| Problem | Without State | With State |
-|---------|---------------|------------|
-| **Duplicate findings** | Validation re-extracts "Tax >100MW" → 2 findings | Single finding F1 tracked by ID through pipeline |
-| **Conflicting interpretations** | LLM variability: one run says "50MW", another says "100MW" | First extraction is canonical, later stages reference by ID |
-| **Wasted cost** | Score same finding twice on rubrics | Score once, `finding_registry[F1]` prevents duplicate processing |
-| **Lost history** | No record of how finding evolved | Full lineage: `origin_version`, `modification_count`, `stability_score` |
-| **Inefficient updates** | Re-analyze all versions when v4 appears | Incremental: load `findings_registry`, analyze only new version |
 
 ### Component 2: Sequential Evolution Agent
 
@@ -1842,6 +1582,282 @@ Output:
 - Latency: 5-8s per finding
 - Throughput: 10-15 findings/min
 - Resource: <5MB memory
+
+---
+
+## End-to-End Pipeline Architecture
+
+The following diagram shows how the orchestration layer coordinates all analysis stages from API call to final output:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ API CALL (Congress.gov / OpenStates)                            │
+│                                                                 │
+│    Input: Bill ID (e.g., "HR-1234")                             │
+│    Output:                                                      │
+│      - bill_summary: Title, sponsor, status                     │
+│      - versions: [{v1: "Introduced"}, {v2: "Amended"}, ...]     │
+│      - bill_text: Full text of each version                     │
+│                                                                 │
+│    → Pass to Orchestrator                                       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ STAGE 1: SEQUENTIAL EVOLUTION (Primary Extraction)             │
+│                                                                 │
+│    Extract findings from ALL versions, track evolution │
+│                                                                 │
+│    Process:                                                     │
+│      v1 (Introduced):                                           │
+│        → Extract findings: F1="Tax >50MW", F2="Applies to gas"  │
+│        → Store in memory with origin=v1                         │
+│                                                                 │
+│      v2 (Amended):                                              │
+│        → Compare to memory                                      │
+│        → F1 MODIFIED: "Tax >50MW" → "Tax >100MW"                │
+│        → F2 STABLE: unchanged                                   │
+│        → F3 NEW: "Exemption for renewables"                     │
+│        → Update memory: F1.modification_count=1                 │
+│                                                                 │
+│      v3 (Enrolled):                                             │
+│        → Compare to memory                                      │
+│        → F1 STABLE in v3 (still "Tax >100MW")                   │
+│        → F2 REMOVED (no longer in bill)                         │
+│        → F3 STABLE                                              │
+│        → Finalize memory                                        │
+│                                                                 │
+│    Output:                                                      │
+│      - findings_registry: {                                     │
+│          F1: {text: "Tax >100MW", origin: v1, mods: 1},         │
+│          F3: {text: "Exemption for renewables", origin: v2}     │
+│        }                                                        │
+│      - stability_scores: {F1: 0.85, F3: 0.70}                   │
+│      - removed_findings: [F2]                                   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ STAGE 2: TWO-TIER VALIDATION (on latest version findings)       │
+│                                                                 │
+│    Validate extracted findings, filter hallucinations           │
+│                                                                 │
+│    Input: findings_registry from Stage 1 (latest state)         │
+│                                                                 │
+│    Process:                                                     │
+│      Tier 1 (Primary Analyst):                                  │
+│        → Already done in Stage 1 (extraction complete)          │
+│                                                                 │
+│      Tier 1.5 (Multi-Sample Check) - if needed:                 │
+│        → Re-run extraction 2-3x with different prompts          │
+│        → Compare outputs for consistency                        │
+│        → Flag findings with low agreement                       │
+│                                                                 │
+│      Tier 2 (Judge):                                            │
+│        → Validate each finding against bill text                │
+│        → Check: Does quote actually support the finding?        │
+│        → Detect hallucinations (finding not in bill)            │
+│        → Assign confidence score                                │
+│                                                                 │
+│      Tier 2.5 (Fallback Model) - if needed:                     │
+│        → For uncertain findings (confidence 0.6-0.8)            │
+│        → Get second opinion from different model (Claude)       │
+│                                                                 │
+│    Output:                                                      │
+│      - validated_findings: [F1, F3] (hallucinations filtered)   │
+│      - validation_metadata: {F1: {confidence: 0.92}, ...}       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ STAGE 3: RUBRIC SCORING                                         │
+│                                                                 │
+│    Purpose: Score validated findings on business impact         │
+│                                                                 │
+│    Input: validated_findings from Stage 2                       │
+│                                                                 │
+│    Process:                                                     │
+│      For each finding, score on 4 dimensions:                   │
+│        - legal_risk: 0-10 (regulatory exposure)                 │
+│        - financial_impact: 0-10 (cost to NRG)                   │
+│        - operational_disruption: 0-10 (process changes)         │
+│        - ambiguity_risk: 0-10 (interpretation uncertainty)      │
+│                                                                 │
+│    Output:                                                      │
+│      - scored_findings: [                                       │
+│          {F1: {legal: 7, financial: 8, operational: 4, ...}},   │
+│          {F3: {legal: 3, financial: 2, operational: 1, ...}}    │
+│        ]                                                        │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ STAGE 4: OUTPUT & PREDICTIONS                                   │
+│                                                                 │
+│    Final output to legal/compliance team:                       │
+│                                                                 │
+│    - Validated findings with rubric scores                      │
+│    - Evolution history: "F1 changed from 50MW→100MW in v2"      │
+│    - Stability predictions:                                     │
+│        "F1: 85% stable - survived 2 versions with 1 change"     │
+│        "F3: 70% stable - added in v2, watch for changes"        │
+│    - Alerts: "Watch F3 - late addition, may change in v4"       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ STAGE 5: INCREMENTAL UPDATE (when new version detected)        │
+│                                                                 │
+│    Trigger: Polling detects v4 added to bill                    │
+│                                                                 │
+│    Process:                                                     │
+│      → Load existing findings_registry from Stage 1             │
+│      → Run Sequential Evolution on v4 ONLY (not v1-v3 again)    │
+│      → Compare v4 to memory, update findings                    │
+│      → Re-validate if findings changed significantly            │
+│      → Re-score changed findings on rubrics                     │
+│                                                                 │
+│    Why incremental:                                             │
+│      → Cost: Analyze 1 version, not 4                           │
+│      → Speed: ~10s instead of ~40s                              │
+│      → Memory: Existing findings already extracted              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '12px'}}}%%
+flowchart TD
+    API["API CALL<br/>Congress.gov / OpenStates<br/><br/>Input: Bill ID<br/>Output: bill_summary, versions, bill_text"]
+
+    DECISION{Has multiple versions?}
+
+    STAGE1["STAGE 1: SEQUENTIAL EVOLUTION<br/>Primary Extraction<br/><br/>v1: Extract findings F1, F2<br/>v2: Compare - F1 MODIFIED, F3 NEW<br/>v3: Finalize - F1 STABLE, F2 REMOVED<br/><br/>Output: findings_registry, stability_scores"]
+
+    STAGE2["STAGE 2: TWO-TIER VALIDATION<br/><br/>Tier 1.5: Multi-Sample Check if needed<br/>Tier 2: Judge validates vs bill text<br/>Tier 2.5: Fallback for uncertain findings<br/><br/>Output: validated_findings, confidence"]
+
+    STAGE3["STAGE 3: RUBRIC SCORING<br/><br/>Score each finding on 4 dimensions:<br/>• legal_risk 0-10<br/>• financial_impact 0-10<br/>• operational_disruption 0-10<br/>• ambiguity_risk 0-10"]
+
+    STAGE4["STAGE 4: OUTPUT & PREDICTIONS<br/><br/>• Validated findings with scores<br/>• Evolution history<br/>• Stability predictions<br/>• Alerts for volatile provisions"]
+
+    STAGE5["STAGE 5: INCREMENTAL UPDATE<br/>when new version detected<br/><br/>• Load existing findings_registry<br/>• Analyze only new version<br/>• Re-validate changed findings<br/><br/>Cost: 1 version vs 4"]
+
+    API --> DECISION
+    DECISION -->|YES| STAGE1
+    DECISION -->|NO| STAGE2
+    STAGE1 --> STAGE2
+    STAGE2 --> STAGE3
+    STAGE3 --> STAGE4
+    STAGE4 -.->|v4 detected| STAGE5
+    STAGE5 -.-> STAGE2
+
+    classDef api fill:#e3f2fd,stroke:#1565c0,color:#000
+    classDef stage fill:#f3e5f5,stroke:#7b1fa2,color:#000
+    classDef decision fill:#fff9c4,stroke:#f9a825,color:#000
+
+    class API api
+    class STAGE1,STAGE2,STAGE3,STAGE4,STAGE5 stage
+    class DECISION decision
+```
+
+| Design Decision | Rationale |
+|-----------------|-----------|
+| **Sequential Evolution runs FIRST** | Must walk all versions to understand evolution before validating. Can't know if finding is "stable" without seeing history. |
+| **Two-Tier validates AFTER extraction** | Validation needs complete findings list. Validating during extraction wastes cost on findings that get modified in later versions. |
+| **Rubric Scoring runs LAST** | Only score validated findings. Hallucinations filtered before scoring to avoid wasting LLM calls. |
+| **Incremental updates for new versions** | Don't re-analyze v1-v3 when v4 appears. Memory enables delta processing. |
+
+**What Stability Scores Predict:**
+
+| Score | Meaning | Prediction |
+|-------|---------|------------|
+| **0.95** | Survived all versions unchanged | Very unlikely to change in future versions |
+| **0.85** | One refinement (e.g., 50MW → 100MW) | May see minor tweaks, core provision stable |
+| **0.70** | Two changes across versions | Contentious provision, watch for more changes |
+| **0.40** | 3+ modifications | Highly volatile, expect further amendments |
+| **0.20** | Added in last version (last-minute) | Risky - often removed or heavily modified |
+
+**Example: Complete Pipeline Run**
+
+*Scenario:* Energy Tax Bill HR-1234 has 3 versions.
+
+```
+API Call
+  → GET /bills/HR-1234
+  → Response: {versions: [v1, v2, v3], status: "Enrolled"}
+---
+STAGE 1: Sequential Evolution
+  v1 (Introduced):
+    F1: "Tax of $50/MW applies to facilities >50MW"
+    F2: "Applies to natural gas facilities"
+
+  v2 (Amended):
+    F1: MODIFIED → "Tax of $50/MW applies to facilities >100MW" (threshold raised)
+    F2: STABLE
+    F3: NEW → "Renewable facilities exempt from tax"
+
+  v3 (Enrolled):
+    F1: STABLE (still >100MW)
+    F2: REMOVED (natural gas provision deleted)
+    F3: STABLE
+
+  Output:
+    findings_registry = {
+      F1: {text: "Tax >100MW", origin: v1, mods: 1, status: STABLE},
+      F3: {text: "Renewables exempt", origin: v2, mods: 0, status: STABLE}
+    }
+    stability_scores = {F1: 0.85, F3: 0.70}
+---
+STAGE 2: Two-Tier Validation
+  F1: Judge validates → confidence 0.92 (quote found in Section 2.1)
+  F3: Judge validates → confidence 0.88 (quote found in Section 4.3)
+
+  Output: Both findings validated, no hallucinations detected
+---
+STAGE 3: Rubric Scoring
+  F1 ("Tax >100MW"):
+    legal_risk: 7, financial_impact: 8, operational: 4, ambiguity: 3
+  F3 ("Renewables exempt"):
+    legal_risk: 3, financial_impact: 6, operational: 2, ambiguity: 5
+---
+STAGE 4: Output
+  Alert to Legal Team:
+    "HR-1234 Enrolled - 2 findings affecting NRG operations"
+
+    Finding 1: Tax applies to facilities >100MW
+      Impact: HIGH (financial: 8/10)
+      Evolution: Originally 50MW in v1, raised to 100MW in v2
+      Stability: 85% (likely final)
+
+    Finding 2: Renewable facilities exempt
+      Impact: MEDIUM (financial: 6/10)
+      Evolution: Added in v2 amendment
+      Stability: 70% (added late, watch for changes)
+      ⚠️ WATCH: Late addition may be modified
+---
+STAGE 5: Later - v4 Detected
+  Polling finds v4 (Conference Report) added
+
+  Incremental update:
+    → Load existing memory (F1, F3)
+    → Analyze v4 only
+    → F1: STABLE
+    → F3: MODIFIED → "Renewable facilities exempt if operational before 2025"
+    → Update F3.modification_count = 1
+    → Re-validate F3, re-score on rubrics
+    → Alert: "F3 changed - new date restriction added"
+```
+
+**Why Centralized State is Critical:**
+
+The Findings Registry prevents these problems (see Component 2: Sequential Evolution Agent for full schema):
+
+| Problem | Without State | With State |
+|---------|---------------|------------|
+| **Duplicate findings** | Validation re-extracts "Tax >100MW" → 2 findings | Single finding F1 tracked by ID through pipeline |
+| **Conflicting interpretations** | LLM variability: one run says "50MW", another says "100MW" | First extraction is canonical, later stages reference by ID |
+| **Wasted cost** | Score same finding twice on rubrics | Score once, `finding_registry[F1]` prevents duplicate processing |
+| **Lost history** | No record of how finding evolved | Full lineage: `origin_version`, `modification_count`, `stability_score` |
+| **Inefficient updates** | Re-analyze all versions when v4 appears | Incremental: load `findings_registry`, analyze only new version |
 
 ---
 

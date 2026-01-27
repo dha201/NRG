@@ -1,0 +1,128 @@
+// CONGRESS.GOV API - Complete Bill Data
+// Pipeline Stage: Data Collection (Phase 2) + Version Tracking (Phase 3)
+// API Endpoint: https://api.congress.gov/v3/bill/{congress}/{type}/{number}
+
+{
+  "bill": {
+    "congress": 118,                        // CRITICAL: Bill IDs reset each Congress. Used in bill_id: 'Congress.gov:118:hr:150'
+    "number": "150",
+    "type": "HR",                           // HR=House Bill, S=Senate Bill, HJRES=Joint Resolution, etc.
+
+    "title": "Protecting American Energy Production Act",  // Display in reports, included in LLM prompt
+
+    "introducedDate": "2023-01-09",         // Timeline tracking, recency filtering
+    "originChamber": "House",
+    "originChamberCode": "H",
+
+    "policyArea": {
+      "name": "Energy"                      // CRITICAL: Primary filter for NRG relevance. We filter: Energy, Environment, Commerce, Finance
+    },
+
+    "latestAction": {
+      "actionDate": "2023-02-21",
+      "text": "Referred to the Subcommittee on Energy and Mineral Resources."  // Status tracking - is bill active or stalled?
+    },
+
+    "sponsors": [{
+      "bioguideId": "D000615",
+      "fullName": "Rep. Duncan, Jeff [R-SC-3]",
+      "party": "R",
+      "state": "SC"                         // Political context for analysis, stakeholder identification
+    }],
+
+    "cosponsors": {
+      "count": 22,                          // High count = strong support, more likely to advance
+      "url": "https://api.congress.gov/v3/bill/118/hr/150/cosponsors?format=json"
+    },
+
+    "committees": {
+      "count": 2,                           // Energy & Commerce committee is key for NRG
+      "url": "https://api.congress.gov/v3/bill/118/hr/150/committees?format=json"
+    },
+
+    "relatedBills": {
+      "count": 4,                           // Cross-reference similar legislation, track companion bills
+      "url": "https://api.congress.gov/v3/bill/118/hr/150/relatedbills?format=json"
+    },
+
+    "subjects": {
+      "count": 6,                           // Secondary filtering for topic relevance
+      "url": "https://api.congress.gov/v3/bill/118/hr/150/subjects?format=json"
+    },
+
+    "summaries": {
+      "count": 1,
+      "url": "https://api.congress.gov/v3/bill/118/hr/150/summaries?format=json"  // CRS summary - fallback when PDF unavailable
+    },
+
+    "textVersions": {
+      "count": 1,
+      "url": "https://api.congress.gov/v3/bill/118/hr/150/text?format=json"  // CRITICAL: Links to full bill text for LLM analysis
+    },
+
+    "updateDate": "2025-12-05T08:13:49Z"    // Change detection: compare to cached value
+  },
+
+  // ============================================================================
+  // SUMMARIES ENDPOINT: /v3/bill/118/hr/150/summaries
+  // Used as FALLBACK when PDF text extraction fails
+  // ============================================================================
+  "summaries": [{
+    "actionDate": "2023-01-09",
+    "actionDesc": "Introduced in House",    // Maps to version type for tracking
+    "versionCode": "00",
+
+    "text": "<p><b>Protecting American Energy Production Act</b></p> <p>This bill prohibits the President from declaring a moratorium on the use of hydraulic fracturing unless Congress authorizes the moratorium. The bill also expresses the sense of Congress that states should maintain primacy for the regulation of hydraulic fracturing for oil and natural gas production on state and private lands.</p> Hydraulic fracturing, or fracking, is a process to extract underground resources such as oil or gas from a geologic formation by injecting water, a propping agent (e.g., sand), and chemical additives into a well under enough pressure to fracture the formation."
+    // ^^^ CRS-written plain English summary. HTML stripped before LLM analysis.
+  }],
+
+  // ============================================================================
+  // TEXT VERSIONS ENDPOINT: /v3/bill/118/hr/150/text
+  // CORE DATA for Version Tracking (Phase 3) and Sequential Evolution (Stage 1)
+  // ============================================================================
+  "textVersions": [{
+    "date": "2023-01-09T05:00:00Z",         // Chronological ordering for evolution analysis
+    "type": "Introduced in House",          // Normalized to "IH" via VERSION_TYPE_MAP
+
+    "formats": [
+      {
+        "type": "Formatted Text",
+        "url": "https://www.congress.gov/118/bills/hr150/BILLS-118hr150ih.htm"
+      },
+      {
+        "type": "PDF",
+        "url": "https://www.congress.gov/118/bills/hr150/BILLS-118hr150ih.pdf"  // PRIMARY: Downloaded, text extracted via PyPDF2
+      },
+      {
+        "type": "Formatted XML",
+        "url": "https://www.congress.gov/118/bills/hr150/BILLS-118hr150ih.xml"  // Structured format for precise section extraction
+      }
+    ]
+  }],
+
+  // ============================================================================
+  // TITLES ENDPOINT: /v3/bill/118/hr/150/titles
+  // ============================================================================
+  "titles": [
+    {
+      "title": "Protecting American Energy Production Act",
+      "titleType": "Display Title"          // Used in reports and notifications
+    },
+    {
+      "title": "Protecting American Energy Production Act",
+      "titleType": "Short Title(s) as Introduced",
+      "billTextVersionCode": "IH"
+    },
+    {
+      "title": "To prohibit a moratorium on the use of hydraulic fracturing.",
+      "titleType": "Official Title as Introduced"  // Legal title - more descriptive of actual content
+    }
+  ],
+
+  // ============================================================================
+  // FULL BILL TEXT - Fetched from formats[].url above
+  // PRIMARY INPUT to LLM analysis in Stage 1 (Sequential Evolution)
+  // Word count: 257. Complexity routing: <500 words = STANDARD path, >500 = DEEP path
+  // ============================================================================
+  "fullText": "[Congressional Bills 118th Congress]\n[From the U.S. Government Publishing Office]\n[H.R. 150 Introduced in House (IH)]\n\n118th CONGRESS\n  1st Session\n                                H. R. 150\n\n      To prohibit a moratorium on the use of hydraulic fracturing.\n\n_______________________________________________________________________\n\n                    IN THE HOUSE OF REPRESENTATIVES\n\n                            January 9, 2023\n\n Mr. Duncan (for himself, Mr. Reschenthaler, Mr. Perry, Mr. Estes, Mr. \nWeber of Texas, Mr. Austin Scott of Georgia, Mr. Biggs, Mr. Norman, Mr. \n Jackson of Texas, Mr. Carl, Mr. Stauber, Mr. Kustoff, Mr. Armstrong, \n and Mr. Womack) introduced the following bill; which was referred to \nthe Committee on Natural Resources, and in addition to the Committee on \nEnergy and Commerce...\n\n_______________________________________________________________________\n\n                                 A BILL\n\n      To prohibit a moratorium on the use of hydraulic fracturing.\n\n    Be it enacted by the Senate and House of Representatives of the \nUnited States of America in Congress assembled,\n\nSECTION 1. SHORT TITLE.\n\n    This Act may be cited as the ``Protecting American Energy \nProduction Act''.\n\nSEC. 2. PROTECTING AMERICAN ENERGY PRODUCTION.\n\n    (a) Sense of Congress.--It is the sense of Congress that States \nshould maintain primacy for the regulation of hydraulic fracturing for \noil and natural gas production on State and private lands.\n\n    (b) Prohibition on Declaration of a Moratorium on Hydraulic \nFracturing.--Notwithstanding any other provision of law, the President \nmay not declare a moratorium on the use of hydraulic fracturing unless \nsuch moratorium is authorized by an Act of Congress."
+}

@@ -48,6 +48,13 @@ from nrg_core.v2.two_tier import TwoTierOrchestrator
 from nrg_core.v2.sequential_evolution import SequentialEvolutionAgent, BillVersion
 from nrg_core.config import load_nrg_context
 
+# Import change detection and cache components
+from nrg_core.analysis.changes import detect_bill_changes, CHANGE_TYPE_TEXT, CHANGE_TYPE_STATUS, CHANGE_TYPE_AMENDMENTS
+from nrg_core.db.cache import init_database, get_cached_bill, save_bill_to_cache, compute_bill_hash
+
+# Import display function for rich CLI output
+from nrg_core.reports.display import display_analysis
+
 load_dotenv()
 
 # ============================================================================
@@ -68,49 +75,75 @@ class PipelineLogger:
     show_timestamps: bool = True
     show_token_counts: bool = True
     show_cost_estimates: bool = True
+    log_file: Optional[Path] = None
+    _log_lines: list = field(default_factory=list)
 
     def _format_time(self) -> str:
         if self.show_timestamps and self.level.value >= LogLevel.NORMAL.value:
             return f"[dim]{datetime.now().strftime('%H:%M:%S')}[/dim] "
         return ""
 
+    def _format_time_plain(self) -> str:
+        """Plain text timestamp for log file."""
+        if self.show_timestamps:
+            return f"{datetime.now().strftime('%H:%M:%S')} "
+        return ""
+
+    def _log_to_file(self, message: str):
+        """Append message to log buffer."""
+        self._log_lines.append(message)
+
+    def save_log(self, log_path: Path):
+        """Save accumulated log to file."""
+        log_path.write_text("\n".join(self._log_lines))
+
     def info(self, message: str, emoji: str = ""):
         """Standard info message."""
         if self.level.value >= LogLevel.NORMAL.value:
             prefix = f"{emoji} " if emoji else ""
             self.console.print(f"{self._format_time()}{prefix}{message}")
+            self._log_to_file(f"{self._format_time_plain()}{prefix}{message}")
 
     def verbose(self, message: str, emoji: str = ""):
         """Verbose message (traces - shown in normal mode and above)."""
         if self.level.value >= LogLevel.NORMAL.value:
             prefix = f"{emoji} " if emoji else ""
             self.console.print(f"{self._format_time()}[dim]{prefix}{message}[/dim]")
+            self._log_to_file(f"{self._format_time_plain()}  {prefix}{message}")
 
     def debug(self, message: str):
         """Debug message (only in debug mode)."""
         if self.level.value >= LogLevel.DEBUG.value:
             self.console.print(f"{self._format_time()}[dim cyan]DEBUG: {message}[/dim cyan]")
+            self._log_to_file(f"{self._format_time_plain()}DEBUG: {message}")
 
     def success(self, message: str):
         """Success message."""
         if self.level.value >= LogLevel.NORMAL.value:
             self.console.print(f"{self._format_time()}[green]✓[/green] {message}")
+            self._log_to_file(f"{self._format_time_plain()}✓ {message}")
 
     def warning(self, message: str):
         """Warning message."""
         self.console.print(f"{self._format_time()}[yellow]⚠[/yellow] {message}")
+        self._log_to_file(f"{self._format_time_plain()}⚠ WARNING: {message}")
 
     def error(self, message: str):
         """Error message."""
         self.console.print(f"{self._format_time()}[red]✗[/red] {message}")
+        self._log_to_file(f"{self._format_time_plain()}✗ ERROR: {message}")
 
     def stage_header(self, stage_num: int, title: str, description: str = ""):
         """Log a pipeline stage header."""
         if self.level.value >= LogLevel.NORMAL.value:
             self.console.print()
             self.console.rule(f"[bold cyan]Stage {stage_num}: {title}[/bold cyan]", style="cyan")
+            self._log_to_file(f"\n{'='*60}")
+            self._log_to_file(f"Stage {stage_num}: {title}")
+            self._log_to_file(f"{'='*60}")
             if description and self.level.value >= LogLevel.DEBUG.value:
                 self.console.print(f"[dim]{description}[/dim]")
+                self._log_to_file(f"  {description}")
 
     def trace_decision(self, component: str, decision: str, rationale: str, details: dict = None):
         """Log a decision with rationale - core for traceability."""
@@ -402,6 +435,31 @@ def fetch_openstates_bills(jurisdiction: str, bill_numbers: List[str], logger: P
                         if versions:
                             bill_text = versions[-1].get("full_text", "")
 
+                        # Extract sponsor info
+                        sponsorships = result.get("sponsorships", [])
+                        primary_sponsor = ""
+                        if sponsorships:
+                            for sp in sponsorships:
+                                if sp.get("primary", False) or sp.get("classification") == "primary":
+                                    primary_sponsor = sp.get("name", "")
+                                    break
+                            if not primary_sponsor and sponsorships:
+                                primary_sponsor = sponsorships[0].get("name", "")
+
+                        # Extract sources/URLs
+                        sources = result.get("sources", [])
+                        bill_url = ""
+                        if sources:
+                            bill_url = sources[0].get("url", "")
+                        # Fallback to Texas Legislature URL
+                        if not bill_url and jurisdiction.upper() == "TX":
+                            session = result.get("session", {})
+                            session_id = session.get("identifier", "89R") if isinstance(session, dict) else "89R"
+                            bill_url = f"https://capitol.texas.gov/BillLookup/History.aspx?LegSess={session_id}&Bill={identifier.replace(' ', '')}"
+
+                        # Extract introduced date
+                        introduced_date = result.get("created_at", "")[:10] if result.get("created_at") else ""
+
                         if bill_text:
                             bills.append({
                                 "source": "Open States",
@@ -410,6 +468,9 @@ def fetch_openstates_bills(jurisdiction: str, bill_numbers: List[str], logger: P
                                 "number": identifier,
                                 "title": result.get("title", "No title"),
                                 "status": result.get("actions", [{}])[-1].get("description", "Unknown") if result.get("actions") else "Unknown",
+                                "sponsor": primary_sponsor,
+                                "introduced_date": introduced_date,
+                                "url": bill_url,
                                 "bill_text": bill_text,
                                 "versions": versions,
                                 "openstates_id": openstates_id,
@@ -429,9 +490,10 @@ def fetch_openstates_bills(jurisdiction: str, bill_numbers: List[str], logger: P
 
 def fetch_congress_bills(limit: int = 3, logger: Optional[PipelineLogger] = None) -> List[Dict]:
     """
-    Fetch federal bills from Congress.gov API.
+    Fetch federal bills from Congress.gov API with ALL text versions.
         - Searches 118th Congress House bills
         - Energy keyword filtering (oil, gas, pipeline, renewable, etc.)
+        - Fetches ALL bill versions (IH, EH, RFS, ENR, etc.) for version tracking
         - Extracts title, sponsor, status, dates
         - Rate limited to config value (default 0.5s) between requests
     """
@@ -478,7 +540,118 @@ def fetch_congress_bills(limit: int = 3, logger: Optional[PipelineLogger] = None
 
                 if detail_resp.status_code == 200:
                     bill_info = detail_resp.json().get("bill", {})
-                    bill_text = bill_info.get("summary", {}).get("text", "")
+
+                    # Fetch ALL bill text versions from /text endpoint
+                    text_url = f"https://api.congress.gov/v3/bill/{congress_num}/{bill_type}/{bill_num}/text"
+                    text_resp = http.get(text_url, params={"api_key": api_key, "format": "json"})
+
+                    versions = []
+                    bill_text = ""  # Will hold the latest version text
+
+                    if text_resp.status_code == 200:
+                        text_data = text_resp.json()
+                        text_versions_raw = text_data.get("textVersions", [])
+
+                        if text_versions_raw:
+                            if logger:
+                                logger.verbose(f"  Found {len(text_versions_raw)} versions for H.R. {bill_num}")
+
+                            # Process ALL versions (like POC 2)
+                            for idx, version_data in enumerate(text_versions_raw, 1):
+                                version_type = version_data.get("type", "Unknown")
+                                version_date = version_data.get("date", "")
+
+                                # Find Formatted Text or TXT format
+                                txt_url = None
+                                formats = version_data.get("formats", [])
+
+                                for fmt in formats:
+                                    if fmt.get("type") in ["Formatted Text", "TXT"]:
+                                        txt_url = fmt.get("url")
+                                        break
+
+                                # Fallback to any available format
+                                if not txt_url and formats:
+                                    txt_url = formats[0].get("url")
+
+                                if not txt_url:
+                                    if logger:
+                                        logger.debug(f"    Version {idx} ({version_type}): No text format, skipping")
+                                    continue
+
+                                # Fetch the actual bill text for this version
+                                try:
+                                    text_content_resp = http.get(txt_url, params={"api_key": api_key})
+                                    if text_content_resp.status_code == 200:
+                                        full_text = text_content_resp.text
+                                        word_count = len(full_text.split()) if full_text else 0
+
+                                        versions.append({
+                                            "version_number": idx,
+                                            "version_type": version_type,
+                                            "version_date": version_date,
+                                            "full_text": full_text,
+                                            "word_count": word_count,
+                                            "text_url": txt_url
+                                        })
+
+                                        if logger:
+                                            logger.verbose(f"    Version {idx}: {version_type} ({word_count} words)")
+
+                                        # Keep track of latest version text (first in list is most recent)
+                                        if not bill_text:
+                                            bill_text = full_text
+
+                                except Exception as e:
+                                    if logger:
+                                        logger.debug(f"    Version {idx}: Error fetching text: {e}")
+                                    continue
+
+                            if logger and versions:
+                                logger.verbose(f"  Extracted {len(versions)}/{len(text_versions_raw)} versions")
+
+                    # Fallback to summary if no full text available
+                    if not bill_text:
+                        bill_text = bill_info.get("summary", {}).get("text", "")
+                        if bill_text and logger:
+                            logger.verbose(f"  Using summary text ({len(bill_text.split())} words)")
+
+                    # If no versions were extracted, create a single "Current" version
+                    if not versions and bill_text:
+                        versions = [{
+                            "version_number": 1,
+                            "version_type": "Current",
+                            "version_date": bill_info.get("introducedDate", ""),
+                            "full_text": bill_text,
+                            "word_count": len(bill_text.split()) if bill_text else 0
+                        }]
+
+                    # Fetch amendments
+                    amendments = []
+                    amendments_url = f"https://api.congress.gov/v3/bill/{congress_num}/{bill_type}/{bill_num}/amendments"
+                    try:
+                        amendments_resp = http.get(amendments_url, params={"api_key": api_key})
+                        if amendments_resp.status_code == 200:
+                            amendments_data = amendments_resp.json()
+                            raw_amendments = amendments_data.get("amendments", [])
+
+                            for amend in raw_amendments:
+                                amendment_entry = {
+                                    "amendment_id": amend.get("number", ""),
+                                    "amendment_number": amend.get("number", ""),
+                                    "type": amend.get("type", ""),
+                                    "date": amend.get("latestAction", {}).get("actionDate", ""),
+                                    "status": amend.get("latestAction", {}).get("text", "Unknown"),
+                                    "purpose": amend.get("purpose", ""),
+                                    "congress": amend.get("congress", congress_num),
+                                }
+                                amendments.append(amendment_entry)
+
+                            if logger and amendments:
+                                logger.verbose(f"  Found {len(amendments)} amendments for H.R. {bill_num}")
+                    except Exception as amend_err:
+                        if logger:
+                            logger.debug(f"  Could not fetch amendments: {amend_err}")
 
                     # Fetch subjects
                     subjects_url = f"https://api.congress.gov/v3/bill/{congress_num}/{bill_type}/{bill_num}/subjects"
@@ -493,22 +666,21 @@ def fetch_congress_bills(limit: int = 3, logger: Optional[PipelineLogger] = None
                             "type": "Federal Bill",
                             "bill_id": f"HR{bill_num}",
                             "number": f"H.R. {bill_num}",
-                            "title": title,
+                            "title": bill_info.get("title", title),  # Use full title from detail
                             "status": bill_info.get("latestAction", {}).get("text", "Unknown"),
                             "sponsor": bill_info.get("sponsor", {}).get("fullName", "Unknown"),
                             "introduced_date": bill_info.get("introducedDate", ""),
+                            "url": f"https://www.congress.gov/bill/{congress_num}th-congress/house-bill/{bill_num}",
+                            "jurisdiction": "Federal",
                             "bill_text": bill_text or "",
-                            "versions": [{
-                                "version_number": 1,
-                                "version_type": "Current",
-                                "full_text": bill_text or "",
-                                "word_count": len(bill_text.split()) if bill_text else 0
-                            }],
+                            "versions": versions,
+                            "amendments": amendments,  # Store amendments from Congress.gov
                             "congress_num": congress_num,
-                            "bill_type": bill_type
+                            "bill_type": bill_type,
+                            "bill_number": bill_num  # Raw number for version tracking
                         })
                         if logger:
-                            logger.success(f"Found H.R. {bill_num}")
+                            logger.success(f"Found H.R. {bill_num} ({len(versions)} versions)")
 
                 if len(bills) >= limit:
                     break
@@ -545,9 +717,10 @@ def fetch_regulations(limit: int = 3, logger: Optional[PipelineLogger] = None) -
     try:
         with httpx.Client(timeout=30.0) as http:
             url = "https://api.regulations.gov/v4/documents"
+            # Note: Regulations.gov API v4 uses page[size] not per_page
             params = {
                 "api_key": api_key,
-                "per_page": 20,
+                "page[size]": 20,  # API v4 syntax
                 "sort": "-postedDate"
             }
 
@@ -721,85 +894,697 @@ def assess_complexity(bill: dict, config: dict, logger: PipelineLogger) -> tuple
 # REPORT GENERATION
 # ============================================================================
 
+def calculate_overall_impact_score(bill_result: dict) -> int:
+    """Calculate overall impact score from rubric scores or findings."""
+    rubric_scores = bill_result.get("rubric_scores", [])
+    if rubric_scores:
+        # Average of unique dimension scores
+        seen = {}
+        for score in rubric_scores:
+            dim = score.get("dimension", "")
+            if dim and dim not in seen:
+                seen[dim] = score.get("score", 0)
+        if seen:
+            return round(sum(seen.values()) / len(seen))
+
+    # Fallback: average of finding impact estimates
+    findings = bill_result.get("findings", [])
+    if findings:
+        impacts = [f.get("impact_estimate", 0) for f in findings]
+        return round(sum(impacts) / len(impacts)) if impacts else 0
+    return 0
+
+
+def get_impact_category(score: int) -> tuple:
+    """Return (category, emoji, color, action) for impact score."""
+    if score >= 7:
+        return ("HIGH", "🔴", "red", "ENGAGE")
+    elif score >= 4:
+        return ("MEDIUM", "🟡", "yellow", "MONITOR")
+    else:
+        return ("LOW", "🟢", "green", "AWARENESS")
+
+
+def get_risk_type(bill_result: dict) -> str:
+    """Determine risk type from rubric scores."""
+    rubric_scores = bill_result.get("rubric_scores", [])
+    if not rubric_scores:
+        return "operational"
+
+    # Find highest scoring dimension
+    max_score = 0
+    max_dim = "operational"
+    seen = {}
+    for score in rubric_scores:
+        dim = score.get("dimension", "")
+        s = score.get("score", 0)
+        if dim and dim not in seen:
+            seen[dim] = s
+            if s > max_score:
+                max_score = s
+                max_dim = dim
+
+    dim_map = {
+        "legal_risk": "regulatory_compliance",
+        "financial_impact": "financial",
+        "operational_disruption": "operational",
+        "ambiguity_risk": "strategic"
+    }
+    return dim_map.get(max_dim, "operational")
+
+
 def generate_markdown_report(results: dict, output_path: Path, logger: PipelineLogger):
-    """Generate detailed Markdown report."""
+    """Generate detailed Markdown report matching POC 2 format with V2 enhancements."""
     logger.verbose("Generating Markdown report...")
 
+    all_results = results.get("results", [])
+
+    # Calculate impact scores and categorize bills
+    for bill_result in all_results:
+        bill_result["_impact_score"] = calculate_overall_impact_score(bill_result)
+        cat, emoji, color, action = get_impact_category(bill_result["_impact_score"])
+        bill_result["_impact_category"] = cat
+        bill_result["_impact_emoji"] = emoji
+        bill_result["_recommended_action"] = action
+
+    # Group by impact level
+    high_impact = [b for b in all_results if b["_impact_category"] == "HIGH"]
+    medium_impact = [b for b in all_results if b["_impact_category"] == "MEDIUM"]
+    low_impact = [b for b in all_results if b["_impact_category"] == "LOW"]
+
+    # Sort each group by score descending
+    high_impact.sort(key=lambda x: x["_impact_score"], reverse=True)
+    medium_impact.sort(key=lambda x: x["_impact_score"], reverse=True)
+    low_impact.sort(key=lambda x: x["_impact_score"], reverse=True)
+
+    # Get change detection summary
+    change_summary = results.get("change_detection_summary", {})
+
     lines = [
-        "# NRG Legislative Intelligence Report",
+        "# NRG Energy Legislative Analysis Report",
         "",
         f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        f"**Pipeline:** V2 (Sequential Evolution + Two-Tier Validation)",
-        f"**Provider:** {results.get('provider', 'Unknown')}",
-        f"**Bills Analyzed:** {results.get('bills_analyzed', 0)}",
-        f"**Total Time:** {results.get('elapsed_seconds', 0):.1f}s",
+        "",
+        "---",
+        "",
+        "## How to Read This Report",
+        "",
+        "This report uses a structured analysis approach to assess legislative impact on NRG:",
+        "",
+        "1. **Findings** are specific provisions extracted from the bill text with supporting evidence (direct quotes)",
+        "2. **Rubric Assessment** scores the bill across four dimensions - each score is justified by the findings",
+        "3. **Stability Analysis** tracks which findings persisted across bill versions (showing only findings with version history)",
+        "4. **Rubric Anchor** indicates the scoring guideline used (e.g., '6-8: Significant obligations' means the score falls in that range)",
+        "",
+        "---",
+        "",
+        "## Change Detection Summary",
+        "",
+        f"- **New Bills:** {change_summary.get('new_bills', 0)} (first time seen)",
+        f"- **Modified Bills:** {change_summary.get('modified_bills', 0)} (text/status/amendments changed)",
+        f"- **Unchanged Bills:** {change_summary.get('unchanged_bills', 0)}",
+        "",
+        "---",
+        "",
+        "## Executive Summary",
+        "",
+        f"- **Total Items Analyzed:** {results.get('bills_analyzed', 0)}",
+        f"- **High Impact (7-10):** {len(high_impact)} items - IMMEDIATE ACTION REQUIRED" if high_impact else f"- **High Impact (7-10):** 0 items",
+        f"- **Medium Impact (4-6):** {len(medium_impact)} items - MONITOR CLOSELY" if medium_impact else f"- **Medium Impact (4-6):** 0 items",
+        f"- **Low Impact (0-3):** {len(low_impact)} items - AWARENESS ONLY" if low_impact else f"- **Low Impact (0-3):** 0 items",
+        "",
+        "**Pipeline Details:**",
+        f"- Architecture: V2 (Sequential Evolution + Two-Tier Validation)",
+        f"- Provider: {results.get('provider', 'Unknown')}",
+        f"- Total Time: {results.get('elapsed_seconds', 0):.1f}s",
         "",
         "---",
         "",
     ]
 
-    for bill_result in results.get("results", []):
+    def generate_bill_section(bill_result: dict, section_num: int) -> list:
+        """Generate markdown for a single bill."""
+        section_lines = []
+
         bill_id = bill_result.get("bill_id", "Unknown")
         title = bill_result.get("bill_title", "No title")
+        impact_score = bill_result["_impact_score"]
+        impact_emoji = bill_result["_impact_emoji"]
+        recommended_action = bill_result["_recommended_action"]
+        risk_type = get_risk_type(bill_result)
 
-        lines.extend([
-            f"## {bill_id}: {title}",
+        # Get change status from change_data
+        change_data = bill_result.get("change_data", {})
+        if change_data.get("is_new"):
+            change_badge = "NEW"
+            change_emoji = "🆕"
+        elif change_data.get("has_changes"):
+            change_badge = "MODIFIED"
+            change_emoji = "📝"
+        else:
+            change_badge = "UNCHANGED"
+            change_emoji = "✓"
+
+        # Determine risk/opportunity
+        risk_or_opportunity = "risk"  # Default, can be enhanced with LLM analysis later
+
+        section_lines.extend([
+            f"### {section_num}. {bill_id} - {title}",
             "",
-            f"| Metric | Value |",
-            f"|--------|-------|",
-            f"| Source | {bill_result.get('source', 'Unknown')} |",
-            f"| Route | {bill_result.get('route', 'STANDARD')} |",
-            f"| Versions Processed | {bill_result.get('versions_processed', 0)} |",
-            f"| Total Findings | {bill_result.get('findings_count', 0)} |",
-            f"| Verified Findings | {bill_result.get('verified_findings', 0)} |",
-            f"| Hallucinations | {bill_result.get('hallucinations_detected', 0)} |",
-            "",
-            "### Findings",
+            f"**Change Status:** {change_emoji} {change_badge}",
             "",
         ])
 
-        for i, finding in enumerate(bill_result.get("findings", []), 1):
-            validations = bill_result.get("validations", [])
-            validation = validations[i - 1] if i <= len(validations) else {}
-            verified = "✓" if validation.get("quote_verified") and not validation.get("hallucination_detected") else "✗"
-            halluc_tag = " [Hallucination]" if validation.get("hallucination_detected") else ""
+        # If modified, show what changed
+        if change_data.get("has_changes") and change_data.get("changes"):
+            changes = change_data.get("changes", [])
+            change_details = []
+            for change in changes:
+                change_type = change.get("type", "unknown")
+                if change_type == CHANGE_TYPE_TEXT:
+                    change_details.append("text")
+                elif change_type == CHANGE_TYPE_STATUS:
+                    old_val = change.get("old_value", "?")
+                    new_val = change.get("new_value", "?")
+                    change_details.append(f"status ({old_val} -> {new_val})")
+                elif change_type == CHANGE_TYPE_AMENDMENTS:
+                    count = change.get("count", 0)
+                    change_details.append(f"amendments (+{count})")
+                else:
+                    change_details.append(change_type)
+            section_lines.append(f"*Changes detected: {', '.join(change_details)}*")
+            section_lines.append("")
 
-            lines.extend([
-                f"#### Finding {i} {verified}{halluc_tag}",
+        section_lines.extend([
+            "**Impact Assessment:**",
+            "",
+            f"- **Score:** {impact_score}/10 {'⚠️' if impact_score >= 7 else '🔔' if impact_score >= 4 else 'ℹ️'}",
+            f"- **Type:** {risk_type.replace('_', ' ').title()}",
+            f"- **Risk Level:** {risk_or_opportunity.upper()}",
+            "",
+            "**Bill Information:**",
+            "",
+            f"- **Source:** {bill_result.get('source', 'Unknown')}",
+            f"- **Number:** {bill_id}",
+        ])
+
+        # Add optional metadata if available
+        if bill_result.get("sponsor"):
+            section_lines.append(f"- **Sponsor:** {bill_result.get('sponsor')}")
+        if bill_result.get("status"):
+            section_lines.append(f"- **Status:** {bill_result.get('status')}")
+        if bill_result.get("introduced_date"):
+            section_lines.append(f"- **Introduced:** {bill_result.get('introduced_date')}")
+        if bill_result.get("url"):
+            section_lines.append(f"- **Link:** {bill_result.get('url')}")
+
+        # Add bill version being analyzed
+        bill_version = bill_result.get("bill_version", "")
+        if bill_version:
+            section_lines.append(f"- **Version Analyzed:** {bill_version}")
+
+        section_lines.extend([
+            f"- **Route:** {bill_result.get('route', 'STANDARD')} (Complexity: {bill_result.get('complexity_score', 0)})",
+            "",
+        ])
+
+        # NRG Business Verticals Section (prominent placement after Bill Info)
+        nrg_verticals = bill_result.get("nrg_business_verticals", [])
+        vertical_details = bill_result.get("nrg_vertical_impact_details", {})
+
+        if nrg_verticals:
+            section_lines.extend([
+                "**NRG Business Verticals Affected:**",
                 "",
-                f"**Statement:** {finding.get('statement', 'No statement')}",
+            ])
+            for vertical in nrg_verticals:
+                section_lines.append(f"- {vertical}")
+            section_lines.append("")
+
+            # Impact by Business Vertical (detailed breakdown)
+            if vertical_details:
+                section_lines.extend([
+                    "**Impact by Business Vertical:**",
+                    "",
+                ])
+                for vertical, impact_desc in vertical_details.items():
+                    section_lines.extend([
+                        f"*{vertical}:*",
+                        f"> {impact_desc}",
+                        "",
+                    ])
+
+        # Version Timeline (if multiple versions)
+        versions_processed = bill_result.get("versions_processed", 1)
+        version_analyses = bill_result.get("version_analyses", [])
+
+        # Always show version timeline with actual version info
+        section_lines.extend([
+            f"**📚 VERSION TIMELINE ({versions_processed} version{'s' if versions_processed != 1 else ''} analyzed)**",
+            "",
+        ])
+
+        if version_analyses:
+            section_lines.append(f"This bill has evolved through {versions_processed} legislative version{'s' if versions_processed != 1 else ''}. Each version was analyzed to track how NRG's risk profile changed:")
+            section_lines.append("")
+            for i, va in enumerate(version_analyses, 1):
+                v_type = va.get("version_type", f"Version {i}")
+                v_date = va.get("version_date", "")[:10] if va.get("version_date") else ""
+                v_score = va.get("impact_score")
+                date_str = f" ({v_date})" if v_date else ""
+                score_str = f"{v_score}/10" if v_score is not None else "Pending"
+                section_lines.append(f"{i}. **{v_type}**{date_str} - Impact Score: {score_str}")
+            section_lines.append("")
+        else:
+            # Show bill version from metadata if available
+            bill_versions = bill_result.get("versions", [])
+            if bill_versions:
+                section_lines.append("Legislative versions available:")
+                section_lines.append("")
+                for i, v in enumerate(bill_versions, 1):
+                    v_type = v.get("version_type", f"Version {i}")
+                    v_date = v.get("version_date", "")[:10] if v.get("version_date") else ""
+                    word_count = v.get("word_count", 0)
+                    date_str = f" ({v_date})" if v_date else ""
+                    section_lines.append(f"{i}. **{v_type}**{date_str} - {word_count:,} words")
+                section_lines.append("")
+            else:
+                section_lines.append("*Single version analyzed*")
+                section_lines.append("")
+
+        # Validation Summary
+        verified = bill_result.get("verified_findings", 0)
+        halluc = bill_result.get("hallucinations_detected", 0)
+        total_findings = bill_result.get("findings_count", 0)
+
+        section_lines.extend([
+            "**Validation Summary:**",
+            "",
+            f"- Total Findings: {total_findings}",
+            f"- ✓ Verified: {verified}",
+            f"- ✗ Hallucinations Filtered: {halluc}",
+            "",
+        ])
+
+        # Findings Section
+        findings = bill_result.get("findings", [])
+        validations = bill_result.get("validations", [])
+
+        if findings:
+            section_lines.extend([
+                "**Findings:**",
                 "",
-                f"- Confidence: {finding.get('confidence', 0):.2f}",
-                f"- Impact Estimate: {finding.get('impact_estimate', 0)}/10",
+                "*Findings are specific provisions extracted from bill text. They serve as evidence for the Rubric Assessment scores below.*",
                 "",
             ])
 
-            if finding.get("quotes"):
-                lines.append("**Quotes:**")
-                for quote in finding.get("quotes", []):
-                    lines.append(f"> \"{quote.get('text', '')}\" — §{quote.get('section', '?')}")
-                lines.append("")
+            for i, finding in enumerate(findings, 1):
+                validation = validations[i - 1] if i <= len(validations) else {}
+                is_verified = validation.get("quote_verified") and not validation.get("hallucination_detected")
+                is_halluc = validation.get("hallucination_detected", False)
 
-        # Rubric scores summary
+                status_icon = "✓" if is_verified else "✗"
+                status_text = " [Hallucination - Filtered]" if is_halluc else ""
+
+                section_lines.extend([
+                    f"**Finding {i}** {status_icon}{status_text}",
+                    "",
+                    f"> {finding.get('statement', 'No statement')}",
+                    "",
+                    f"- Confidence: {finding.get('confidence', 0):.2f}",
+                    f"- Impact Estimate: {finding.get('impact_estimate', 0)}/10",
+                ])
+
+                # Add impact type if available
+                impact_type = finding.get("impact_type", "")
+                if impact_type:
+                    section_lines.append(f"- Impact Type: {impact_type.replace('_', ' ').title()}")
+
+                # Add affected verticals if available
+                finding_verticals = finding.get("affected_verticals", [])
+                if finding_verticals:
+                    section_lines.append(f"- Affected Verticals: {', '.join(finding_verticals)}")
+
+                # Evidence quality from validation
+                if validation.get('evidence_quality'):
+                    section_lines.append(f"- Evidence Quality: {validation.get('evidence_quality', 0):.2f}")
+
+                # Supporting Quotes
+                quotes = finding.get("quotes", [])
+                if quotes:
+                    section_lines.append("")
+                    section_lines.append("*Supporting Evidence:*")
+                    for quote in quotes[:3]:  # Limit to 3 quotes
+                        text = quote.get("text", "")[:200]
+                        section = quote.get("section", "?")
+                        section_lines.append(f'> "{text}{"..." if len(quote.get("text", "")) > 200 else ""}" — §{section}')
+
+                section_lines.append("")
+
+        # Rubric Scores
         rubric_scores = bill_result.get("rubric_scores", [])
         if rubric_scores:
-            lines.extend([
-                "### Rubric Scores",
+            section_lines.extend([
+                "**Rubric Assessment (Four-Dimension Scoring):**",
                 "",
-                "| Dimension | Score | Anchor |",
-                "|-----------|-------|--------|",
+                "| Dimension | Score | Rubric Anchor |",
+                "|-----------|-------|---------------|",
             ])
-            seen = set()
+
+            # Deduplicate and show each dimension once
+            seen = {}
             for score in rubric_scores:
                 dim = score.get("dimension", "")
-                if dim not in seen:
-                    seen.add(dim)
-                    lines.append(f"| {dim} | {score.get('score', 0)}/10 | {score.get('rubric_anchor', '')} |")
-            lines.append("")
+                if dim and dim not in seen:
+                    seen[dim] = score
 
-        lines.extend(["", "---", ""])
+            dim_display = {
+                "legal_risk": "Legal Risk",
+                "financial_impact": "Financial Impact",
+                "operational_disruption": "Operational Disruption",
+                "ambiguity_risk": "Ambiguity/Interpretive Risk"
+            }
 
-    output_path.write_text("\n".join(lines))
+            for dim, score in seen.items():
+                display_name = dim_display.get(dim, dim.replace("_", " ").title())
+                s = score.get("score", 0)
+                anchor = score.get("rubric_anchor", "")
+                section_lines.append(f"| {display_name} | {s}/10 | {anchor} |")
+
+            # Calculate and show average
+            if seen:
+                avg = round(sum(s.get("score", 0) for s in seen.values()) / len(seen), 1)
+                section_lines.append(f"| **Overall Average** | **{avg}/10** | |")
+
+            section_lines.append("")
+            section_lines.append("*Note: Rubric Anchor shows the scoring guideline that applies (e.g., \"6-8: Significant obligations\" means the assessed score falls within that defined range).*")
+            section_lines.append("")
+
+            # Show rationales as "Why This Matters to NRG"
+            section_lines.append("**Why This Matters to NRG:**")
+            section_lines.append("")
+            for dim, score in seen.items():
+                display_name = dim_display.get(dim, dim.replace("_", " ").title())
+                rationale = score.get("rationale", "No rationale provided")
+                section_lines.append(f"- **{display_name}:** {rationale}")
+            section_lines.append("")
+
+        # Stability Analysis (if available)
+        stability_data = bill_result.get("stability_analysis", {})
+        if stability_data:
+            # Only show findings that have stability scores
+            total_findings = len(findings) if findings else 0
+            tracked_findings = len(stability_data)
+
+            section_lines.extend([
+                "**Stability Analysis:**",
+                "",
+                f"*Tracking {tracked_findings} of {total_findings} findings across bill versions. Stability score indicates likelihood the provision will remain in final bill (0.20 = volatile/last-minute, 0.95 = stable across all versions).*",
+                "",
+            ])
+
+            for finding_id, stability in stability_data.items():
+                if isinstance(stability, dict):
+                    score = stability.get("score", 0)
+                    prediction = stability.get("prediction", "Unknown")
+                    # Add interpretation
+                    if score >= 0.85:
+                        interpretation = "Stable - likely to persist"
+                    elif score >= 0.60:
+                        interpretation = "Moderately stable"
+                    elif score >= 0.40:
+                        interpretation = "Contentious - subject to change"
+                    else:
+                        interpretation = "Volatile - recently added"
+                    section_lines.append(f"- {finding_id}: {score:.2f} → {interpretation}")
+                else:
+                    # Simple float value
+                    if stability >= 0.85:
+                        interpretation = "Stable"
+                    elif stability >= 0.60:
+                        interpretation = "Moderately stable"
+                    elif stability >= 0.40:
+                        interpretation = "Contentious"
+                    else:
+                        interpretation = "Volatile"
+                    section_lines.append(f"- {finding_id}: {stability:.2f} → {interpretation}")
+            section_lines.append("")
+
+        # --- POC 2 Style Detailed Analysis Sections ---
+
+        # Legal Code Changes
+        legal_changes = bill_result.get("legal_code_changes", {})
+        if legal_changes and any(legal_changes.values()):
+            section_lines.extend([
+                "**Legal Code Changes:**",
+                "",
+            ])
+            if legal_changes.get("sections_added"):
+                section_lines.append("- **Added:**")
+                for s in legal_changes["sections_added"]:
+                    section_lines.append(f"    - {s}")
+            if legal_changes.get("sections_amended"):
+                section_lines.append("- **Amended:**")
+                for s in legal_changes["sections_amended"]:
+                    section_lines.append(f"    - {s}")
+            if legal_changes.get("sections_repealed"):
+                section_lines.append("- **Repealed:**")
+                for s in legal_changes["sections_repealed"]:
+                    section_lines.append(f"    - {s}")
+            if legal_changes.get("substance"):
+                section_lines.extend([
+                    "",
+                    f"- **Substance:** {legal_changes['substance']}",
+                ])
+            section_lines.append("")
+
+        # Application Scope
+        app_scope = bill_result.get("application_scope", {})
+        if app_scope and any(app_scope.values()):
+            section_lines.extend([
+                "**Application Scope:**",
+                "",
+            ])
+            if app_scope.get("applies_to"):
+                section_lines.append("- **Applies To:**")
+                for item in app_scope["applies_to"]:
+                    section_lines.append(f"    - {item}")
+            if app_scope.get("exclusions"):
+                section_lines.append("- **Exclusions:**")
+                for item in app_scope["exclusions"]:
+                    section_lines.append(f"    - {item}")
+            if app_scope.get("geographic_scope"):
+                section_lines.append(f"- **Geographic:** {app_scope['geographic_scope']}")
+            section_lines.append("")
+
+        # Effective Dates
+        eff_dates = bill_result.get("effective_dates", [])
+        if eff_dates:
+            section_lines.extend([
+                "**Effective Dates:**",
+                "",
+            ])
+            for ed in eff_dates:
+                date = ed.get("date", "Unknown")
+                applies = ed.get("applies_to", "")
+                section_lines.append(f"- {date}: {applies}")
+            section_lines.append("")
+
+        # Provision Types
+        prov_types = bill_result.get("provision_types", {})
+        if prov_types and any(prov_types.values()):
+            section_lines.extend([
+                "**Provision Types:**",
+                "",
+            ])
+            if prov_types.get("mandatory"):
+                section_lines.append(f"- **Mandatory ({len(prov_types['mandatory'])}):**")
+                for p in prov_types["mandatory"][:3]:  # Limit to first 3
+                    section_lines.append(f"    - {p[:150]}{'...' if len(p) > 150 else ''}")
+            if prov_types.get("permissive"):
+                section_lines.append(f"- **Permissive ({len(prov_types['permissive'])}):**")
+                for p in prov_types["permissive"][:3]:
+                    section_lines.append(f"    - {p[:150]}{'...' if len(p) > 150 else ''}")
+            section_lines.append("")
+
+        # Exceptions & Exemptions
+        exc_exempt = bill_result.get("exceptions_and_exemptions", {})
+        if exc_exempt and any(exc_exempt.values()):
+            section_lines.extend([
+                "**Exceptions & Exemptions:**",
+                "",
+            ])
+            if exc_exempt.get("exceptions"):
+                section_lines.append("- **Exceptions:**")
+                for e in exc_exempt["exceptions"]:
+                    section_lines.append(f"    - {e}")
+            if exc_exempt.get("exemptions"):
+                section_lines.append("- **Exemptions:**")
+                for e in exc_exempt["exemptions"]:
+                    section_lines.append(f"    - {e}")
+            section_lines.append("")
+
+        # Affected NRG Assets
+        nrg_assets = bill_result.get("affected_nrg_assets", {})
+        if nrg_assets and any(nrg_assets.values()):
+            section_lines.extend([
+                "**Affected NRG Assets:**",
+                "",
+            ])
+            if nrg_assets.get("facilities"):
+                section_lines.append("- **Facilities:**")
+                for f in nrg_assets["facilities"]:
+                    section_lines.append(f"    - {f}")
+            if nrg_assets.get("markets"):
+                section_lines.append("- **Markets:**")
+                for m in nrg_assets["markets"]:
+                    section_lines.append(f"    - {m}")
+            if nrg_assets.get("business_units"):
+                section_lines.append("- **Business Units:**")
+                for bu in nrg_assets["business_units"]:
+                    section_lines.append(f"    - {bu}")
+            section_lines.append("")
+
+        # Key Provisions
+        key_prov = bill_result.get("key_provisions", [])
+        if key_prov:
+            section_lines.extend([
+                "**Key Provisions Relevant to NRG:**",
+                "",
+            ])
+            for kp in key_prov[:5]:  # Limit to 5
+                section_lines.append(f"- {kp}")
+            section_lines.append("")
+
+        # Financial Estimate
+        fin_est = bill_result.get("financial_estimate", "")
+        if fin_est:
+            section_lines.extend([
+                f"**Financial Estimate:** {fin_est}",
+                "",
+            ])
+
+        # Internal Stakeholders
+        stakeholders = bill_result.get("internal_stakeholders", [])
+        if stakeholders:
+            section_lines.extend([
+                "**Internal Stakeholders:**",
+                "",
+            ])
+            for s in stakeholders:
+                section_lines.append(f"- {s}")
+            section_lines.append("")
+
+        # --- End POC 2 Style Sections ---
+
+        # Recommended Actions
+        # Use LLM's recommended action if available, otherwise derive from score
+        llm_action = bill_result.get("llm_recommended_action", "").upper()
+        if llm_action in ["URGENT", "ENGAGE", "SUPPORT"]:
+            recommended_action = "ENGAGE"
+        elif llm_action == "IGNORE":
+            recommended_action = "AWARENESS"
+
+        action_emoji = "✅" if recommended_action == "ENGAGE" else "🔔" if recommended_action == "MONITOR" else "ℹ️"
+        action_text = {
+            "ENGAGE": "Immediate attention required - engage Government Affairs",
+            "MONITOR": "Monitor closely and prepare response strategies",
+            "AWARENESS": "For awareness only - no immediate action required"
+        }
+
+        section_lines.extend([
+            "**Recommended Actions:**",
+            "",
+            f"- {action_emoji} **{recommended_action}** - {action_text.get(recommended_action, '')}",
+        ])
+
+        if recommended_action == "ENGAGE":
+            section_lines.extend([
+                "- Track legislative progress closely",
+                "- Coordinate with internal stakeholders",
+                "- Prepare impact assessment for leadership",
+            ])
+        elif recommended_action == "MONITOR":
+            section_lines.extend([
+                "- Add to weekly monitoring dashboard",
+                "- Prepare contingency response if elevated",
+            ])
+
+        section_lines.extend(["", "---", ""])
+
+        return section_lines
+
+    # Generate High Impact Section
+    if high_impact:
+        lines.extend([
+            "## 🔴 HIGH IMPACT ITEMS (Score: 7-10)",
+            "",
+            "*These items require immediate engagement with Government Affairs.*",
+            "",
+        ])
+        for i, bill in enumerate(high_impact, 1):
+            lines.extend(generate_bill_section(bill, i))
+
+    # Generate Medium Impact Section
+    if medium_impact:
+        lines.extend([
+            "## 🟡 MEDIUM IMPACT ITEMS (Score: 4-6)",
+            "",
+            "*Monitor these items and prepare response strategies.*",
+            "",
+        ])
+        for i, bill in enumerate(medium_impact, 1):
+            lines.extend(generate_bill_section(bill, i))
+
+    # Generate Low Impact Section
+    if low_impact:
+        lines.extend([
+            "## 🟢 LOW IMPACT ITEMS (Score: 0-3)",
+            "",
+            "*For awareness only - no immediate action required.*",
+            "",
+        ])
+        for i, bill in enumerate(low_impact, 1):
+            lines.extend(generate_bill_section(bill, i))
+
+    # Footer / Next Steps
+    lines.extend([
+        "---",
+        "",
+        "## Next Steps",
+        "",
+        "### Immediate (This Week):",
+        "- Government Affairs: Track high-impact bills committee assignments",
+        "- Schedule cross-functional meeting to assess regulatory risks",
+        "- Prepare initial cost impact assessments for high-impact items",
+        "",
+        "### Short-term (This Month):",
+        "- Environmental Compliance: Assess compliance scenarios",
+        "- Finance: Model financial impact ranges",
+        "- Legal: Review regulatory exposure",
+        "",
+        "### Ongoing:",
+        "- Continue monitoring via this tracker",
+        "- Update analysis as bills progress through legislative process",
+        "- Brief executive leadership monthly",
+        "",
+        "---",
+        "",
+        "**Report Details:**",
+        f"- **Pipeline:** V2 (Sequential Evolution + Two-Tier Validation)",
+        f"- **Provider:** {results.get('provider', 'Unknown')}",
+        f"- **Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+        "*This report is generated automatically. For questions or to update tracking parameters, contact your Government Affairs team.*",
+    ])
+
+    # Clean up empty lines
+    cleaned_lines = []
+    for line in lines:
+        if line.strip() or (cleaned_lines and cleaned_lines[-1].strip()):
+            cleaned_lines.append(line)
+
+    output_path.write_text("\n".join(cleaned_lines))
     logger.success(f"Markdown report: {output_path}")
 
 
@@ -855,10 +1640,141 @@ def generate_reports(results: dict, output_dir: Path, config: dict, logger: Pipe
 
     formats = config.get("output", {}).get("formats", {"json": True, "markdown": True, "docx": True})
 
+    # Enhance results with executive summary (POC 2 format)
+    all_results = results.get("results", [])
+
+    # Calculate impact scores and categorize
+    high_impact_count = 0
+    medium_impact_count = 0
+    low_impact_count = 0
+    total_findings = 0
+    total_verified = 0
+    total_hallucinations = 0
+
+    for bill_result in all_results:
+        # Calculate overall impact score
+        impact_score = calculate_overall_impact_score(bill_result)
+        bill_result["overall_impact_score"] = impact_score
+
+        # Categorize
+        cat, emoji, color, action = get_impact_category(impact_score)
+        bill_result["impact_category"] = cat
+        bill_result["recommended_action"] = action
+
+        if cat == "HIGH":
+            high_impact_count += 1
+        elif cat == "MEDIUM":
+            medium_impact_count += 1
+        else:
+            low_impact_count += 1
+
+        # Aggregate metrics
+        total_findings += bill_result.get("findings_count", 0)
+        total_verified += bill_result.get("verified_findings", 0)
+        total_hallucinations += bill_result.get("hallucinations_detected", 0)
+
+    # Add executive summary to results (POC 2 format)
+    results["executive_summary"] = {
+        "total_items_analyzed": results.get("bills_analyzed", 0),
+        "high_impact_count": high_impact_count,
+        "medium_impact_count": medium_impact_count,
+        "low_impact_count": low_impact_count,
+        "total_findings": total_findings,
+        "verified_findings": total_verified,
+        "hallucinations_filtered": total_hallucinations,
+        "high_impact_action": "IMMEDIATE ACTION REQUIRED" if high_impact_count > 0 else None,
+        "medium_impact_action": "MONITOR CLOSELY" if medium_impact_count > 0 else None,
+        "low_impact_action": "AWARENESS ONLY" if low_impact_count > 0 else None,
+    }
+
+    # Display rich CLI results (POC 2 style)
+    console = Console()
+    console.print()
+    console.print("═" * 47)
+    console.print("  ANALYSIS RESULTS  ")
+    console.print("═" * 47)
+    console.print()
+
+    # Sort by impact score (high first)
+    sorted_results = sorted(all_results, key=lambda x: x.get("overall_impact_score", 0), reverse=True)
+
+    for bill_result in sorted_results:
+        # Build item dict for display_analysis
+        item = {
+            "source": bill_result.get("source", "Unknown"),
+            "number": bill_result.get("bill_id", ""),
+            "type": bill_result.get("type", "Bill"),
+            "title": bill_result.get("bill_title", "No title"),
+            "url": bill_result.get("url", ""),
+            "status": bill_result.get("status", "Unknown"),
+            "sponsor": bill_result.get("sponsor", "Unknown"),
+            "introduced_date": bill_result.get("introduced_date", ""),
+            "agency": bill_result.get("agency", ""),
+            "policy_area": bill_result.get("policy_area", ""),
+        }
+
+        # Build analysis dict for display_analysis
+        # Determine impact type from highest rubric dimension
+        rubric_scores = bill_result.get("rubric_scores", [])
+        impact_type = "operational"
+        if rubric_scores:
+            max_score = max(rubric_scores, key=lambda x: x.get("score", 0))
+            dim = max_score.get("dimension", "")
+            if "legal" in dim.lower():
+                impact_type = "regulatory_compliance"
+            elif "financial" in dim.lower():
+                impact_type = "financial"
+            elif "operational" in dim.lower():
+                impact_type = "operational"
+            elif "ambiguity" in dim.lower():
+                impact_type = "strategic"
+
+        # Generate impact summary from verticals and findings
+        verticals = bill_result.get("nrg_business_verticals", [])
+        impact_details = bill_result.get("nrg_vertical_impact_details", {})
+        impact_summary = ""
+        if impact_details:
+            # Use first vertical's impact detail as summary
+            for v, detail in impact_details.items():
+                impact_summary = detail
+                break
+        if not impact_summary:
+            findings = bill_result.get("findings", [])
+            if findings:
+                impact_summary = findings[0].get("statement", "")
+
+        analysis = {
+            "business_impact_score": bill_result.get("overall_impact_score", 0),
+            "bill_version": bill_result.get("bill_version", "unknown"),
+            "impact_type": impact_type,
+            "risk_or_opportunity": "risk" if bill_result.get("overall_impact_score", 0) > 5 else "neutral",
+            "impact_summary": impact_summary or "See findings for details.",
+            "nrg_business_verticals": verticals,
+            "legal_code_changes": bill_result.get("legal_code_changes", {}),
+            "application_scope": bill_result.get("application_scope", {}),
+            "effective_dates": bill_result.get("effective_dates", []),
+            "affected_nrg_assets": bill_result.get("affected_nrg_assets", {}),
+            "financial_impact": bill_result.get("financial_estimate", "Unknown"),
+            "timeline": "See effective dates",
+            "recommended_action": bill_result.get("llm_recommended_action", bill_result.get("recommended_action", "monitor")),
+            "internal_stakeholders": bill_result.get("internal_stakeholders", []),
+        }
+
+        display_analysis(item, analysis)
+
+    # Add report metadata
+    results["report_metadata"] = {
+        "report_version": "2.0",
+        "format": "POC 2 Compatible",
+        "generated_at": datetime.now().isoformat(),
+        "report_id": base_name,
+        "output_directory": str(report_dir),
+    }
+
     # JSON (always)
     json_path = report_dir / f"{base_name}.json"
     with open(json_path, "w") as f:
-        json.dump(results, f, indent=2)
+        json.dump(results, f, indent=2, default=str)
     logger.success(f"JSON report: {json_path}")
 
     # Markdown
@@ -871,8 +1787,13 @@ def generate_reports(results: dict, output_dir: Path, config: dict, logger: Pipe
         docx_path = report_dir / f"{base_name}.docx"
         markdown_to_docx(md_path, docx_path, logger)
 
+    # Save CLI log file
+    log_path = report_dir / f"{base_name}.log"
+    logger.save_log(log_path)
+    logger.success(f"CLI log: {log_path}")
+
     logger.success(f"All reports saved to: {report_dir}/")
-    return json_path
+    return report_dir
 
 
 # ============================================================================
@@ -944,25 +1865,29 @@ def analyze_bill_v2(bill: Dict[str, Any], config: dict, nrg_context: str, api_ke
                 )
 
         # Log each finding with details
-        for i, finding in enumerate(evolution_result.findings_registry, 1):
-            quotes = [{"text": q.text, "section": q.section} for q in finding.quotes] if hasattr(finding, 'quotes') else []
+        # findings_registry is a dict: {"F1": {...}, "F2": {...}}
+        for i, (finding_id, finding) in enumerate(evolution_result.findings_registry.items(), 1):
+            # finding is a dict with keys: id, statement, quotes, confidence, impact_estimate, etc.
+            quotes = finding.get("quotes", [])
             logger.trace_finding(
                 i,
-                finding.statement if hasattr(finding, 'statement') else str(finding),
+                finding.get("statement", str(finding_id)),
                 quotes,
-                finding.confidence if hasattr(finding, 'confidence') else 0.5,
-                finding.impact_estimate if hasattr(finding, 'impact_estimate') else 0
+                finding.get("confidence", 0.5),
+                finding.get("impact_estimate", 0)
             )
 
             # Log stability for this finding
-            if hasattr(finding, 'origin_version') and hasattr(finding, 'modification_count'):
-                stability = evolution_result.stability_scores.get(finding.id, 0.5) if hasattr(finding, 'id') else 0.5
+            origin_version = finding.get("origin_version")
+            mod_count = finding.get("modification_count", 0)
+            if origin_version is not None:
+                stability = evolution_result.stability_scores.get(finding_id, 0.5)
                 prediction = "Very stable" if stability >= 0.9 else "Stable" if stability >= 0.7 else "May change" if stability >= 0.5 else "Volatile"
                 logger.trace_stability(
-                    f"F{i}",
+                    finding_id,
                     stability,
-                    finding.origin_version,
-                    finding.modification_count,
+                    origin_version,
+                    mod_count,
                     prediction
                 )
 
@@ -1120,24 +2045,111 @@ def analyze_bill_v2(bill: Dict[str, Any], config: dict, nrg_context: str, api_ke
 
         logger.success(f"Generated {len(rubric_scores)} rubric scores")
 
-    # Compile result
+    # Build version analyses array from raw versions data
+    version_analyses = []
+    raw_versions = bill.get("versions", [])
+    for v in raw_versions:
+        version_analyses.append({
+            "version_number": v.get("version_number", 0),
+            "version_type": v.get("version_type", f"Version {v.get('version_number', 0)}"),
+            "version_date": v.get("version_date", ""),
+            "word_count": v.get("word_count", 0),
+            "impact_score": None,  # Would be filled by per-version analysis if enabled
+        })
+
+    # Build stability analysis from evolution result
+    stability_analysis = {}
+    if hasattr(evolution_result, 'stability_scores') and evolution_result.stability_scores:
+        for finding_id, score in evolution_result.stability_scores.items():
+            prediction = "Very stable" if score >= 0.9 else "Stable" if score >= 0.7 else "May change" if score >= 0.5 else "Volatile"
+            stability_analysis[finding_id] = {
+                "score": score,
+                "prediction": prediction
+            }
+
+    # Determine current bill version being analyzed
+    latest_version = versions[-1] if versions else None
+    bill_version_name = latest_version.name if latest_version else "Unknown"
+
+    # Compile result with enhanced metadata (matching POC 2 format)
     analysis_result = {
+        # Bill Metadata
         "bill_id": bill_id,
         "bill_title": bill.get("title", ""),
         "source": bill.get("source", ""),
+        "type": bill.get("type", "State Bill"),
+        "status": bill.get("status", "Unknown"),
+        "sponsor": bill.get("sponsor", ""),
+        "introduced_date": bill.get("introduced_date", ""),
+        "url": bill.get("url", ""),
+        "jurisdiction": bill.get("jurisdiction", ""),
+        "bill_version": bill_version_name,  # Version being analyzed
+
+        # Original bill item data for JSON output (POC 2 format)
+        "item": {
+            "source": bill.get("source", ""),
+            "type": bill.get("type", ""),
+            "number": bill.get("number", bill_id),
+            "title": bill.get("title", ""),
+            "url": bill.get("url", ""),
+            "status": bill.get("status", ""),
+            "sponsor": bill.get("sponsor", ""),
+            "introduced_date": bill.get("introduced_date", ""),
+            "bill_text": bill.get("bill_text", "")[:500] + "..." if len(bill.get("bill_text", "")) > 500 else bill.get("bill_text", ""),
+            "versions": [
+                {
+                    "version_number": v.get("version_number", i + 1),
+                    "version_type": v.get("version_type", f"Version {i + 1}"),
+                    "version_date": v.get("version_date", ""),
+                    "word_count": v.get("word_count", 0),
+                    "text_hash": v.get("text_hash", ""),
+                }
+                for i, v in enumerate(bill.get("versions", []))
+            ]
+        },
+
+        # Pipeline Metadata
         "route": route,
         "complexity_score": complexity_score,
+        "complexity_reasons": complexity_reasons,
         "versions_processed": len(versions),
+
+        # Version Tracking (POC 2 feature) - also store raw versions
+        "versions": bill.get("versions", []),
+        "version_analyses": version_analyses,
+
+        # NRG Business Verticals (extracted from Sequential Evolution)
+        "nrg_business_verticals": evolution_result.nrg_business_verticals,
+        "nrg_vertical_impact_details": evolution_result.nrg_vertical_impact_details,
+
+        # POC 2 style detailed analysis fields
+        "legal_code_changes": evolution_result.legal_code_changes,
+        "application_scope": evolution_result.application_scope,
+        "effective_dates": evolution_result.effective_dates,
+        "provision_types": evolution_result.provision_types,
+        "exceptions_and_exemptions": evolution_result.exceptions_and_exemptions,
+        "affected_nrg_assets": evolution_result.affected_nrg_assets,
+        "key_provisions": evolution_result.key_provisions,
+        "financial_estimate": evolution_result.financial_estimate,
+        "llm_recommended_action": evolution_result.recommended_action,
+        "internal_stakeholders": evolution_result.internal_stakeholders,
+
+        # Findings
         "findings_count": len(result.primary_analysis.findings),
         "findings": [
             {
+                "finding_id": f"F{i+1}",
                 "statement": f.statement,
                 "quotes": [{"text": q.text, "section": q.section} for q in f.quotes],
                 "confidence": f.confidence,
-                "impact_estimate": f.impact_estimate
+                "impact_estimate": f.impact_estimate,
+                "origin_version": getattr(f, 'origin_version', 1),
+                "modification_count": getattr(f, 'modification_count', 0),
             }
-            for f in result.primary_analysis.findings
+            for i, f in enumerate(result.primary_analysis.findings)
         ],
+
+        # Validations (Two-Tier)
         "validations": [
             {
                 "finding_id": v.finding_id,
@@ -1148,19 +2160,31 @@ def analyze_bill_v2(bill: Dict[str, Any], config: dict, nrg_context: str, api_ke
             }
             for v in result.judge_validations
         ],
+
+        # Rubric Scores (Four-Dimension)
         "rubric_scores": [
             {
                 "dimension": s.dimension,
                 "score": s.score,
-                "rationale": s.rationale[:200] + "..." if len(s.rationale) > 200 else s.rationale,
+                "rationale": s.rationale,  # Full rationale for JSON
                 "rubric_anchor": s.rubric_anchor
             }
             for s in rubric_scores
         ],
+
+        # Stability Analysis (Sequential Evolution feature)
+        "stability_analysis": stability_analysis,
+
+        # Validation Metadata
         "multi_sample_agreement": result.multi_sample_agreement,
         "second_model_reviewed": result.second_model_reviewed,
+
+        # Summary Metrics
         "hallucinations_detected": halluc_count,
         "verified_findings": verified_count,
+
+        # Change Detection (from pre-analysis phase)
+        "change_data": bill.get("change_data", {}),
     }
 
     # Display summary panel
@@ -1204,6 +2228,20 @@ def main():
     # Determine output directory
     output_dir = Path(args.output) if args.output else Path(config.get("output", {}).get("directory", "./reports"))
 
+    # Initialize SQLite cache database
+    db_path = config.get("cache", {}).get("database", "./data/nrg_cache.db")
+    db_conn = None
+    try:
+        # Ensure data directory exists
+        db_dir = Path(db_path).parent
+        db_dir.mkdir(parents=True, exist_ok=True)
+
+        db_conn = init_database(db_path)
+        logger.info(f"Initialized cache database: {db_path}")
+    except Exception as e:
+        logger.warning(f"Could not initialize cache database: {e} - continuing without caching")
+        db_conn = None
+
     # Get API key
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -1225,6 +2263,16 @@ def main():
         border_style="cyan",
     ))
 
+    # Log startup banner to file
+    logger._log_to_file("=" * 60)
+    logger._log_to_file("NRG Legislative Intelligence v2.0")
+    logger._log_to_file("=" * 60)
+    logger._log_to_file(f"Provider: {provider}")
+    logger._log_to_file(f"Architecture: Sequential Evolution + Two-Tier Validation")
+    logger._log_to_file(f"Logging: {logger.level.name}")
+    logger._log_to_file(f"Output: {output_dir}")
+    logger._log_to_file("")
+
     start_time = time.time()
 
     # Fetch bills
@@ -1233,19 +2281,129 @@ def main():
         logger.error("No bills fetched - check config.yaml and API keys")
         sys.exit(1)
 
-    # Analyze each bill
+    # =========================================================================
+    # CHANGE DETECTION: Compare fetched bills against cached versions
+    # =========================================================================
+    logger.console.print()
+    logger.console.rule("[bold cyan]Change Detection[/bold cyan]")
+
+    new_bills_count = 0
+    modified_bills_count = 0
+    unchanged_bills_count = 0
+
+    for bill in bills:
+        bill_id_for_cache = f"{bill['source']}:{bill['number']}"
+
+        # Get cached version if database is available
+        cached_bill = None
+        if db_conn:
+            cached_bill = get_cached_bill(bill_id_for_cache, db_conn)
+
+        # Detect changes using existing change detection module
+        change_data = detect_bill_changes(cached_bill, bill)
+
+        # Store change data in the bill for later use in reports
+        bill["change_data"] = change_data
+
+        # Track counts
+        if change_data.get("is_new"):
+            new_bills_count += 1
+            logger.verbose(f"  [green]NEW[/green] {bill['number']}: First time seen")
+        elif change_data.get("has_changes"):
+            modified_bills_count += 1
+            # Log what changed
+            changes = change_data.get("changes", [])
+            change_types = [c.get("type", "unknown") for c in changes]
+            logger.verbose(f"  [yellow]MODIFIED[/yellow] {bill['number']}: {', '.join(change_types)}")
+        else:
+            unchanged_bills_count += 1
+            logger.verbose(f"  [dim]UNCHANGED[/dim] {bill['number']}: No changes detected")
+
+    # Show change detection summary
+    logger.console.print()
+    logger.console.print(Panel(
+        f"[bold]Change Detection Summary[/bold]\n\n"
+        f"  [green]New Bills:[/green] {new_bills_count}\n"
+        f"  [yellow]Modified Bills:[/yellow] {modified_bills_count}\n"
+        f"  [dim]Unchanged Bills:[/dim] {unchanged_bills_count}",
+        title="Change Detection",
+        border_style="cyan",
+    ))
+
+    # Log to file
+    logger._log_to_file("")
+    logger._log_to_file("Change Detection Summary:")
+    logger._log_to_file(f"  New Bills: {new_bills_count}")
+    logger._log_to_file(f"  Modified Bills: {modified_bills_count}")
+    logger._log_to_file(f"  Unchanged Bills: {unchanged_bills_count}")
+    logger._log_to_file("")
+
+    # Store change detection summary for reports
+    change_detection_summary = {
+        "new_bills": new_bills_count,
+        "modified_bills": modified_bills_count,
+        "unchanged_bills": unchanged_bills_count,
+    }
+
+    # Analyze each bill (still analyze ALL - optimization for later)
     logger.info(f"Analyzing {len(bills)} bills with V2 pipeline...")
     results = []
+    cache_hits = 0
+    cache_misses = 0
 
     for idx, bill in enumerate(bills, 1):
         bill_id = bill.get("bill_id", "Unknown")
         logger.console.print()
         logger.console.rule(f"[bold]({idx}/{len(bills)}) {bill_id}[/bold]")
+        logger._log_to_file(f"\n{'='*60}")
+        logger._log_to_file(f"({idx}/{len(bills)}) {bill_id}")
+        logger._log_to_file(f"{'='*60}")
+
+        # Check cache for existing bill data
+        cached_bill = None
+        if db_conn:
+            try:
+                cache_key = f"{bill.get('source', 'Unknown')}:{bill.get('number', bill_id)}"
+                cached_bill = get_cached_bill(cache_key, db_conn)
+                if cached_bill:
+                    cache_hits += 1
+                    logger.verbose(f"Found bill in cache (last checked: {cached_bill.get('last_checked', 'unknown')})")
+                    # Note: For now we still analyze - change detection is a separate task
+                    # Future: compare text_hash to detect changes
+                else:
+                    cache_misses += 1
+                    logger.verbose("Bill not in cache - will cache after analysis")
+            except Exception as cache_err:
+                logger.debug(f"Cache lookup error: {cache_err}")
 
         analysis = analyze_bill_v2(bill, config, nrg_context, api_key, logger)
         results.append(analysis)
 
+        # Save bill and analysis to cache
+        if db_conn and not analysis.get("error"):
+            try:
+                # Prepare bill data for caching (include analysis summary)
+                bill_for_cache = {
+                    **bill,
+                    "summary": bill.get("bill_text", "")[:5000],  # Store first 5000 chars for hashing
+                    "analysis_summary": {
+                        "findings_count": analysis.get("findings_count", 0),
+                        "verified_findings": analysis.get("verified_findings", 0),
+                        "hallucinations_detected": analysis.get("hallucinations_detected", 0),
+                        "route": analysis.get("route", "STANDARD"),
+                        "complexity_score": analysis.get("complexity_score", 0),
+                    }
+                }
+                save_bill_to_cache(bill_for_cache, db_conn)
+                logger.verbose(f"Saved {bill_id} to cache (with {len(bill.get('amendments', []))} amendments)")
+            except Exception as save_err:
+                logger.warning(f"Could not save to cache: {save_err}")
+
     elapsed = time.time() - start_time
+
+    # Log cache statistics
+    if db_conn:
+        logger.info(f"Cache statistics: {cache_hits} hits, {cache_misses} misses")
 
     # Compile final output
     output = {
@@ -1254,6 +2412,7 @@ def main():
         "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
         "elapsed_seconds": elapsed,
         "bills_analyzed": len(results),
+        "change_detection_summary": change_detection_summary,
         "results": results,
     }
 
@@ -1262,23 +2421,56 @@ def main():
     logger.console.rule("[bold]Generating Reports[/bold]")
     report_path = generate_reports(output, output_dir, config, logger)
 
-    # Show final summary
+    # Show final summary with impact categorization (POC 2 format)
     total_findings = sum(r.get("findings_count", 0) for r in results)
     total_verified = sum(r.get("verified_findings", 0) for r in results)
     total_halluc = sum(r.get("hallucinations_detected", 0) for r in results)
 
+    # Calculate impact categories
+    high_count = sum(1 for r in results if r.get("impact_category") == "HIGH")
+    medium_count = sum(1 for r in results if r.get("impact_category") == "MEDIUM")
+    low_count = sum(1 for r in results if r.get("impact_category") == "LOW")
+
     logger.console.print()
     logger.console.print(Panel(
         f"[bold green]Analysis Complete[/bold green]\n\n"
-        f"Bills Analyzed: {len(results)}\n"
-        f"Total Findings: {total_findings}\n"
-        f"Verified: {total_verified}\n"
-        f"Hallucinations Filtered: {total_halluc}\n"
-        f"Total Time: {elapsed:.1f}s\n\n"
-        f"Reports saved to: {output_dir}",
+        f"[bold]Bills Analyzed:[/bold] {len(results)}\n"
+        f"  🔴 High Impact (7-10): {high_count}\n"
+        f"  🟡 Medium Impact (4-6): {medium_count}\n"
+        f"  🟢 Low Impact (0-3): {low_count}\n\n"
+        f"[bold]Findings:[/bold]\n"
+        f"  Total: {total_findings}\n"
+        f"  ✓ Verified: {total_verified}\n"
+        f"  ✗ Hallucinations Filtered: {total_halluc}\n\n"
+        f"[bold]Total Time:[/bold] {elapsed:.1f}s\n\n"
+        f"[bold]Reports saved to:[/bold] {report_path}",
         title="Summary",
-        border_style="green",
+        border_style="green" if high_count == 0 else "yellow" if high_count < 2 else "red",
     ))
+
+    # Log final summary to file
+    logger._log_to_file("")
+    logger._log_to_file("=" * 60)
+    logger._log_to_file("ANALYSIS COMPLETE")
+    logger._log_to_file("=" * 60)
+    logger._log_to_file(f"Bills Analyzed: {len(results)}")
+    logger._log_to_file(f"  🔴 High Impact (7-10): {high_count}")
+    logger._log_to_file(f"  🟡 Medium Impact (4-6): {medium_count}")
+    logger._log_to_file(f"  🟢 Low Impact (0-3): {low_count}")
+    logger._log_to_file(f"Findings:")
+    logger._log_to_file(f"  Total: {total_findings}")
+    logger._log_to_file(f"  ✓ Verified: {total_verified}")
+    logger._log_to_file(f"  ✗ Hallucinations Filtered: {total_halluc}")
+    logger._log_to_file(f"Total Time: {elapsed:.1f}s")
+    logger._log_to_file(f"Reports saved to: {report_path}")
+
+    # Close database connection
+    if db_conn:
+        try:
+            db_conn.close()
+            logger.debug("Closed cache database connection")
+        except Exception as e:
+            logger.debug(f"Error closing database: {e}")
 
     return 0
 

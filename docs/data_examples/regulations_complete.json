@@ -1,0 +1,125 @@
+// REGULATIONS.GOV API - Docket and Document Data
+// Pipeline Stage: Data Collection (Phase 2) - NO VERSION TRACKING AVAILABLE
+// API Endpoints:
+//   Search:   https://api.regulations.gov/v4/documents?filter[searchTerm]=pipeline
+//   Docket:   https://api.regulations.gov/v4/dockets/{docketId}
+//   Document: https://api.regulations.gov/v4/documents/{documentId}
+
+// ============================================================================
+// ⚠️  CRITICAL LIMITATION: REGULATIONS.GOV API V4 DOES NOT SUPPORT VERSION TRACKING
+// ============================================================================
+// Unlike Congress.gov and OpenStates, there is NO way to fetch historical document versions.
+// Only lastModifiedDate and withdrawn status are available.
+// Workaround: Cache full document text, compare hashes on each run to detect changes.
+
+{
+  // ============================================================================
+  // DOCKET = Container for related regulatory documents (like a folder)
+  // Endpoint: https://api.regulations.gov/v4/dockets/PHMSA-2016-0004
+  // ============================================================================
+  "docket": {
+    "id": "PHMSA-2016-0004",              // Unique docket ID. Format: {AGENCY}-{YEAR}-{NUMBER}
+    "type": "dockets",
+
+    "attributes": {
+      "agencyId": "PHMSA",                // Pipeline and Hazardous Materials Safety Administration - CRITICAL for NRG
+
+      "title": "Tennessee Gas Pipeline, L.L.C - Special Permit (OPID 19160)",  // Describes the regulatory action
+
+      "dkAbstract": "Special Permit",     // Brief description of docket purpose
+
+      "docketType": "Nonrulemaking",      // "Rulemaking" = new rules (HIGH priority), "Nonrulemaking" = permits, guidance
+
+      "subType": "Pipeline Safety",       // Category within agency - "Pipeline Safety" is core NRG concern
+
+      "category": "Pending",              // Status: "Pending", "Closed", "Posted". Pending = active regulatory action.
+
+      "modifyDate": "2025-10-16T13:06:03Z",  // ONLY change indicator available. Compare to cached value.
+
+      "rin": null,                        // Regulation Identifier Number - if present, links to Unified Agenda
+
+      "effectiveDate": null               // When rule takes effect - critical for compliance planning
+    }
+  },
+
+  // ============================================================================
+  // DOCUMENTS = Individual items within a docket
+  // Endpoint: https://api.regulations.gov/v4/documents?filter[docketId]=PHMSA-2016-0004
+  // ============================================================================
+  "documents": [
+    {
+      "id": "PHMSA-2016-0004-0040",        // Unique document ID. Format: {DOCKET_ID}-{SEQUENCE}
+      "type": "documents",
+
+      "attributes": {
+        "documentType": "Supporting & Related Material",
+        // ^^^ Document type priorities:
+        //   "Proposed Rule"               - HIGH: New rule being considered, comment period open
+        //   "Final Rule"                  - CRITICAL: New compliance requirement taking effect
+        //   "Notice"                      - MEDIUM: Agency communication, may signal future action
+        //   "Supporting & Related Material" - LOW: Background documents
+
+        "title": "Tennessee Gas Pipeline Attachment A",
+
+        "agencyId": "PHMSA",
+
+        "docketId": "PHMSA-2016-0004",    // Links document to parent docket
+
+        "subtype": "Supplement",          // Document subcategory
+
+        "postedDate": "2025-09-11T04:00:00Z",  // When published - used for recency filtering
+
+        "lastModifiedDate": "2025-09-11T22:58:16Z",  // ONLY change detection available. Cache and compare.
+
+        "commentEndDate": null,           // If set, deadline for public comments - important for engagement
+
+        "commentStartDate": null,
+
+        "openForComment": false,          // Whether public comments being accepted NOW
+
+        "withinCommentPeriod": false,     // True if current date is between commentStartDate and commentEndDate
+
+        "withdrawn": false,               // If true, document/rule has been pulled. Stop tracking.
+
+        "frDocNum": null                  // Federal Register document number - links to FR publication
+      },
+
+      "links": {
+        "self": "https://api.regulations.gov/v4/documents/PHMSA-2016-0004-0040"
+      }
+    }
+  ],
+
+  // ============================================================================
+  // SEARCH EXAMPLE - How we find NRG-relevant regulations
+  // ============================================================================
+  "searchExample": {
+    "endpoint": "https://api.regulations.gov/v4/documents",
+    "filters": {
+      "filter[searchTerm]": "pipeline OR natural gas OR energy",
+      "filter[agencyId]": "PHMSA,EPA,FERC,DOE",              // Key agencies for NRG
+      "filter[documentType]": "Proposed Rule,Final Rule",    // Focus on actual rules
+      "filter[postedDate][ge]": "2024-01-01",                // Recent documents only
+      "sort": "-postedDate"
+    }
+  },
+
+  // ============================================================================
+  // KEY AGENCIES FOR NRG
+  // ============================================================================
+  // PHMSA - Pipeline and Hazardous Materials Safety Administration (pipeline safety regs)
+  // EPA   - Environmental Protection Agency (emissions, water, waste)
+  // FERC  - Federal Energy Regulatory Commission (wholesale energy markets, interstate pipelines)
+  // DOE   - Department of Energy (energy policy, grid reliability)
+  // OSHA  - Occupational Safety and Health Administration (workplace safety)
+
+  // ============================================================================
+  // PIPELINE INTEGRATION
+  // ============================================================================
+  // Phase 2 (Collection): Fetch documents matching NRG-relevant filters
+  // Phase 4 (Change Detection): Compare lastModifiedDate to cached value
+  //   ⚠️ LIMITATION: Can only detect IF changed, not WHAT changed
+  //   Workaround: Cache full document text, compute diff on change detected
+  // Phase 5 (Analysis): For Proposed/Final Rules, analyze compliance impact
+  //   ⚠️ NO version tracking - analyze current state only, no evolution analysis possible
+}

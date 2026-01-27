@@ -48,16 +48,54 @@ class BillVersion:
 @dataclass
 class EvolutionResult:
     """Result of sequential version walk.
-    
+
     Attributes:
         bill_id: Bill identifier
         findings_registry: Dictionary of findings with metadata
         stability_scores: Stability score for each finding (0-1)
+        nrg_business_verticals: List of NRG business verticals impacted by the bill
+        nrg_vertical_impact_details: Dict mapping vertical name to impact description
     """
     bill_id: str
     findings_registry: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     stability_scores: Dict[str, float] = field(default_factory=dict)
+    nrg_business_verticals: List[str] = field(default_factory=list)
+    nrg_vertical_impact_details: Dict[str, str] = field(default_factory=dict)
+    # POC 2 style detailed analysis fields
+    legal_code_changes: Dict[str, Any] = field(default_factory=dict)
+    application_scope: Dict[str, Any] = field(default_factory=dict)
+    effective_dates: List[Dict[str, str]] = field(default_factory=list)
+    provision_types: Dict[str, List[str]] = field(default_factory=dict)
+    exceptions_and_exemptions: Dict[str, List[str]] = field(default_factory=dict)
+    affected_nrg_assets: Dict[str, List[str]] = field(default_factory=dict)
+    key_provisions: List[str] = field(default_factory=list)
+    financial_estimate: str = ""
+    recommended_action: str = "monitor"
+    internal_stakeholders: List[str] = field(default_factory=list)
 
+
+NRG_BUSINESS_VERTICALS = [
+    "Upstream Oil & Gas Production",
+    "Offshore Drilling & Production",
+    "Refining Operations",
+    "Retail Marketing & Fuel Distribution",
+    "Pipelines & Midstream Infrastructure",
+    "Natural Gas Markets & Trading",
+    "Environmental Compliance & Air Quality",
+    "Climate Policy & Carbon Management",
+    "Carbon Capture & Storage (CCS)",
+    "Hydrogen & Clean Fuels",
+    "Renewable Natural Gas (RNG) & Biogas",
+    "Biofuels & Sustainable Aviation Fuel (SAF)",
+    "EV Charging Infrastructure",
+    "Renewable Energy & Power Generation",
+    "Tax Policy",
+    "Trade & Tariffs",
+    "Environmental Remediation & Liability",
+    "Workforce & Labor Relations",
+    "General Business & Corporate Governance",
+    "Cyber & Critical Infrastructure Security",
+]
 
 EVOLUTION_PROMPT_V1 = """Analyze this bill (Version 1: {version_name}).
 
@@ -71,6 +109,31 @@ REQUIREMENTS:
 1. Each finding MUST have at least one verbatim quote from the bill
 2. Include the section reference for each quote
 3. Estimate impact 0-10 (0=no impact, 10=existential threat)
+4. Identify which NRG business verticals are impacted by this bill
+5. Extract legal analysis details (code changes, application scope, effective dates)
+6. Classify provisions as mandatory (SHALL/MUST) or permissive (MAY)
+
+NRG BUSINESS VERTICALS (select from this exact list):
+- Upstream Oil & Gas Production
+- Offshore Drilling & Production
+- Refining Operations
+- Retail Marketing & Fuel Distribution
+- Pipelines & Midstream Infrastructure
+- Natural Gas Markets & Trading
+- Environmental Compliance & Air Quality
+- Climate Policy & Carbon Management
+- Carbon Capture & Storage (CCS)
+- Hydrogen & Clean Fuels
+- Renewable Natural Gas (RNG) & Biogas
+- Biofuels & Sustainable Aviation Fuel (SAF)
+- EV Charging Infrastructure
+- Renewable Energy & Power Generation
+- Tax Policy
+- Trade & Tariffs
+- Environmental Remediation & Liability
+- Workforce & Labor Relations
+- General Business & Corporate Governance
+- Cyber & Critical Infrastructure Security
 
 OUTPUT (JSON):
 {{
@@ -84,9 +147,46 @@ OUTPUT (JSON):
       "origin_version": 1,
       "affected_sections": ["2.1"],
       "modification_count": 0,
-      "impact_estimate": 7
+      "impact_estimate": 7,
+      "impact_type": "regulatory_compliance|financial|operational|market|strategic",
+      "affected_verticals": ["<verticals this finding specifically impacts>"]
     }}
-  ]
+  ],
+  "nrg_business_verticals": ["<select from the 20 verticals above>"],
+  "nrg_vertical_impact_details": {{
+    "<vertical_name>": "<specific impact on this vertical>"
+  }},
+  "legal_code_changes": {{
+    "sections_added": ["<new sections created by this bill>"],
+    "sections_amended": ["<existing code sections modified>"],
+    "sections_repealed": ["<sections removed or repealed>"],
+    "substance": "<summary of what the legal changes actually do>"
+  }},
+  "application_scope": {{
+    "applies_to": ["<who this bill applies to: companies, agencies, individuals>"],
+    "exclusions": ["<who is explicitly excluded>"],
+    "geographic_scope": "<federal/state/specific regions>"
+  }},
+  "effective_dates": [
+    {{"date": "<effective date or 'upon enactment'>", "applies_to": "<what becomes effective>"}}
+  ],
+  "provision_types": {{
+    "mandatory": ["<provisions using SHALL/MUST language>"],
+    "permissive": ["<provisions using MAY language or non-binding>"]
+  }},
+  "exceptions_and_exemptions": {{
+    "exceptions": ["<exceptions where bill applies but person can prove exception>"],
+    "exemptions": ["<exemptions where person is categorically exempt>"]
+  }},
+  "affected_nrg_assets": {{
+    "facilities": ["<specific NRG facilities potentially affected>"],
+    "markets": ["<geographic markets affected: Texas, Gulf of Mexico, etc.>"],
+    "business_units": ["<NRG business units: NRGx energy, Archaea, etc.>"]
+  }},
+  "key_provisions": ["<direct quotes of the most NRG-relevant provisions with section refs>"],
+  "financial_estimate": "<estimated financial impact to NRG if known>",
+  "recommended_action": "ignore|monitor|engage|urgent|support",
+  "internal_stakeholders": ["<NRG departments that should be involved>"]
 }}
 
 CRITICAL: Every statement must be supported by a direct quote from the bill."""
@@ -104,6 +204,29 @@ TASK:
 2. Mark findings as: STABLE (unchanged), MODIFIED (changed), or NEW
 3. Update modification counts
 4. Update quotes if text changed
+5. Update NRG business verticals if impacted areas have changed
+
+NRG BUSINESS VERTICALS (select from this exact list):
+- Upstream Oil & Gas Production
+- Offshore Drilling & Production
+- Refining Operations
+- Retail Marketing & Fuel Distribution
+- Pipelines & Midstream Infrastructure
+- Natural Gas Markets & Trading
+- Environmental Compliance & Air Quality
+- Climate Policy & Carbon Management
+- Carbon Capture & Storage (CCS)
+- Hydrogen & Clean Fuels
+- Renewable Natural Gas (RNG) & Biogas
+- Biofuels & Sustainable Aviation Fuel (SAF)
+- EV Charging Infrastructure
+- Renewable Energy & Power Generation
+- Tax Policy
+- Trade & Tariffs
+- Environmental Remediation & Liability
+- Workforce & Labor Relations
+- General Business & Corporate Governance
+- Cyber & Critical Infrastructure Security
 
 OUTPUT (JSON):
 {{
@@ -119,7 +242,11 @@ OUTPUT (JSON):
       "status": "MODIFIED",
       "impact_estimate": 7
     }}
-  ]
+  ],
+  "nrg_business_verticals": ["<select from the 20 verticals above>"],
+  "nrg_vertical_impact_details": {{
+    "<vertical_name>": "<specific impact on this vertical>"
+  }}
 }}
 
 CRITICAL: Every statement must be supported by a direct quote from the bill."""
@@ -158,22 +285,36 @@ class SequentialEvolutionAgent:
     ) -> EvolutionResult:
         """
         Walk versions in order, maintaining findings registry.
-        
+
         Algorithm:
         1. For each version in chronological order
         2. If first version: extract initial findings
         3. If subsequent: compare to memory and update
         4. After all versions: compute stability scores
-        
+        5. Extract NRG business verticals from final analysis
+
         Args:
             bill_id: Bill identifier
             versions: List of BillVersion objects in chronological order
-        
+
         Returns:
-            EvolutionResult with findings registry and stability scores
+            EvolutionResult with findings registry, stability scores, and NRG verticals
         """
         findings_registry = {}
-        
+        nrg_business_verticals = []
+        nrg_vertical_impact_details = {}
+        # POC 2 style detailed analysis fields (captured from latest version)
+        legal_code_changes = {}
+        application_scope = {}
+        effective_dates = []
+        provision_types = {}
+        exceptions_and_exemptions = {}
+        affected_nrg_assets = {}
+        key_provisions = []
+        financial_estimate = ""
+        recommended_action = "monitor"
+        internal_stakeholders = []
+
         for idx, version in enumerate(versions):
             if idx == 0:
                 # First version: extract initial findings
@@ -181,19 +322,59 @@ class SequentialEvolutionAgent:
             else:
                 # Subsequent versions: compare to memory
                 analysis = self._analyze_version(version, is_first=False, memory=findings_registry)
-            
+
             # Update registry
-            for finding in analysis["findings"]:
+            for finding in analysis.get("findings", []):
                 finding_id = finding["id"]
                 findings_registry[finding_id] = finding
-        
+
+            # Capture NRG business verticals (use latest version's assessment)
+            if "nrg_business_verticals" in analysis:
+                nrg_business_verticals = analysis["nrg_business_verticals"]
+            if "nrg_vertical_impact_details" in analysis:
+                nrg_vertical_impact_details = analysis["nrg_vertical_impact_details"]
+
+            # Capture POC 2 style detailed fields (use latest version's assessment)
+            if "legal_code_changes" in analysis:
+                legal_code_changes = analysis["legal_code_changes"]
+            if "application_scope" in analysis:
+                application_scope = analysis["application_scope"]
+            if "effective_dates" in analysis:
+                effective_dates = analysis["effective_dates"]
+            if "provision_types" in analysis:
+                provision_types = analysis["provision_types"]
+            if "exceptions_and_exemptions" in analysis:
+                exceptions_and_exemptions = analysis["exceptions_and_exemptions"]
+            if "affected_nrg_assets" in analysis:
+                affected_nrg_assets = analysis["affected_nrg_assets"]
+            if "key_provisions" in analysis:
+                key_provisions = analysis["key_provisions"]
+            if "financial_estimate" in analysis:
+                financial_estimate = analysis["financial_estimate"]
+            if "recommended_action" in analysis:
+                recommended_action = analysis["recommended_action"]
+            if "internal_stakeholders" in analysis:
+                internal_stakeholders = analysis["internal_stakeholders"]
+
         # Compute stability scores
         stability_scores = self._compute_stability(findings_registry, num_versions=len(versions))
-        
+
         return EvolutionResult(
             bill_id=bill_id,
             findings_registry=findings_registry,
-            stability_scores=stability_scores
+            stability_scores=stability_scores,
+            nrg_business_verticals=nrg_business_verticals,
+            nrg_vertical_impact_details=nrg_vertical_impact_details,
+            legal_code_changes=legal_code_changes,
+            application_scope=application_scope,
+            effective_dates=effective_dates,
+            provision_types=provision_types,
+            exceptions_and_exemptions=exceptions_and_exemptions,
+            affected_nrg_assets=affected_nrg_assets,
+            key_provisions=key_provisions,
+            financial_estimate=financial_estimate,
+            recommended_action=recommended_action,
+            internal_stakeholders=internal_stakeholders
         )
     
     def _analyze_version(
